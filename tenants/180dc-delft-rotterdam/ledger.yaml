@@ -1,0 +1,47 @@
+# The only claims an email may make about the sender. Tag each in a draft as [claim:ID];
+# tools/lint_email.py rejects unknown IDs and any entry with usable: false.
+#
+# Source IDs point to the vault ledger (second-brain/career/evidence-ledger.yaml). Wording here is
+# anonymised for cold email: no client names. No usage numbers, ever (the reviewer's "~2 hours /
+# 20%" figure is banned). Entries marked usable: false wait for Manuel or the legal team.
+
+claims:
+  - id: ROLE
+    usable: true
+    source: DC-AI-LEAD-001
+    wording: "I lead AI at 180 Degrees Consulting Delft & Rotterdam."
+
+  - id: TR-PROPERTY
+    usable: true
+    source: IMMO-AUTOMATION-001 (prototype, demoed to the client)
+    wording: "built and demoed an automation for a property-tech company that reads an incoming damage report, works out which trade is needed, finds local contractors and drafts the request to them"
+    note: anonymised; say 'built and demoed', never 'in production'
+
+  - id: TR-EVIDENCE
+    usable: true
+    source: EXP-AZTEC-003 (shipped)
+    wording: "set up an AI workflow at a Luxembourg fund-services firm that finds the evidence a review team needs in past correspondence and cites the source for each item, so a person approves instead of searching"
+    note: anonymised; Manuel to confirm the wording once
+
+  - id: TR-REVIEWER
+    usable: true
+    source: DC-REVIEWER-001 (adopted)
+    wording: "built the AI reviewer that checks our consultants' work before it reaches a client, citing the source for every comment"
+    note: no time-saving numbers
+
+  - id: BR-WHO
+    usable: true
+    source: tenant description, confirm against 180dc.org
+    wording: "a student consultancy working with nonprofits and social enterprises"
+
+  - id: BR-PAST-WORK
+    usable: false
+    source: 180dc-ai/portfolio-workbench source packs (market assessment, operating strategy, financial sustainability, brand, digital presence)
+    wording: "our teams have worked on strategy, funding and digital projects for nonprofits"
+    note: blocked until the branch confirms it may say this; no client names
+
+  - id: TR-OIL
+    usable: false
+    source: none yet
+    wording: ""
+    note: no shipped Oil Empire automation in the vault ledger; add only when one exists

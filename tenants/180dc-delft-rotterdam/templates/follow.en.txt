@@ -1,0 +1,3 @@
+{name}, one short question on my note last week: which of these takes your team the most hours, {w1} or {w2}? A one-line answer helps us either way.
+
+{sender}

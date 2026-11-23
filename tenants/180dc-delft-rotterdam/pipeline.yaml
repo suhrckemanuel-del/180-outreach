@@ -1,0 +1,10 @@
+# Organisations, people and touches for this tenant. Addresses live in private/contacts.private.yaml.
+# Write only through the tools (send.py, gmail_draft.py sync --apply) or under the writer lock.
+#
+# org:   id, name, domain, city, country, segment, lang (en|de), tier (1|2), status
+#        (active | replied | opted_out | closed | paused), card (cards/<id>.md), outcome (call | proposal | signed | no)
+# touch: id, contact, kind (first | follow_up | chain), arm (A|B), status
+#        (drafted | needs_approval | ready | sent | replied | bounced | opted_out | no_reply | held),
+#        body (drafts/<touch>.txt, the tagged source), draft_id, gmail_thread_id, drafted, sent, approved, after
+
+orgs: []

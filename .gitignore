@@ -1,0 +1,7 @@
+__pycache__/
+*.tmp
+data/
+.venv/
+tenants/*/private/
+tenants/*/drafts/
+tenants/*/state/

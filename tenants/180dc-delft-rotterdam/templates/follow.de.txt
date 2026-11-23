@@ -1,0 +1,3 @@
+Guten Tag {name}, eine kurze Frage zu meiner Nachricht von letzter Woche: Was kostet Ihr Team mehr Stunden, {w1} oder {w2}? Eine Zeile als Antwort hilft uns, und wir melden uns dann gezielt.
+
+{sender}

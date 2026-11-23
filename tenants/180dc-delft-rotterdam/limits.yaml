@@ -1,0 +1,22 @@
+# Pacing for one new inbox on the shared 180dc.org domain. Read by tools/send.py.
+#
+# Goal: about 1,000 emails in total (first emails + follow-ups) by the Christmas break.
+# The ramp counts weeks from the FIRST REAL SEND, so a late start never skips the warm-up.
+# 20/35/50/65 a day over four weeks plus two days = about 1,000 if sending starts Mon 23 Nov.
+
+ramp_per_week: [20, 35, 50, 65]          # all emails a day, week 1..4; the last value holds after
+last_send_date: 2026-12-22               # nonprofits are mostly closed from 23 Dec; nothing after this
+send_weekdays: [mon, tue, wed, thu, fri]
+send_window: ["08:30", "16:30"]          # Europe/Amsterdam, the PC's clock
+gap_seconds: [180, 480]                  # random wait between two sends; no bursts
+
+follow_up_after_days: 7                   # the question follow-up
+chain_gap_days: 4                         # second person at the same organisation, after the first follow-up
+max_follow_ups_per_address: 1
+org_gap_days: 4                           # days between two different people at one organisation
+
+# Automatic pause: send.py writes state/STOP and sends nothing more when either trips.
+auto_pause:
+  bounce_rate: 0.03                       # bounced / sent over the last 100 sends ...
+  min_sent: 40                            # ... once at least this many have gone out
+  max_bounces_per_day: 3

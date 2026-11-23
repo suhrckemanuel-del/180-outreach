@@ -1,0 +1,99 @@
+# Who sends, what is offered, who is targeted. Read by every tool through tools/tenant.py.
+# Decided with Manuel on 2026-11-18/19 (docs/build-spec.md). Fields marked TODO block sending
+# until filled: send.py refuses while any TODO remains in sender, booking_link or registry.
+
+name: 180DC Delft & Rotterdam
+owner_tag: 180dc-delft-rotterdam        # written into the shared registry as the owner of our contacts
+
+sender:
+  name: Manuel Suhrcke
+  first_name: Manuel
+  role: Head of AI
+  organisation: 180 Degrees Consulting Delft & Rotterdam
+  address: m.suhrcke@180dc.org            # the sending inbox; the Gmail login must match it
+  phone: ""                               # optional, printed in the footer if set
+
+booking_link: https://calendar.app.google/FgZybrToR2KRiZN7A   # 30-min appointment schedule on m.suhrcke@180dc.org
+
+# Manuel's call rules (2026-11-21), for drafted reply answers that propose a time.
+call_availability:
+  hours: Mon-Fri 08:00-20:00 Europe/Amsterdam
+  avoid: Monday 11:00-12:45 and Thursday 11:00-12:45 (tutorials, Erasmus timetable)
+  skippable: lectures and the Thursday 13:00 tutorial; book over them freely
+  exception: if a strong prospect can only do a tutorial slot, offer it and flag it for Manuel to decide
+  flag: when a booked call lands on a lecture, say so in the report (Manuel decides whether to skip)
+
+offer:
+  ask: a free 30-minute call
+  project: audit of where time goes, one main automation built with the client, a scoped list of further work, handover
+  pricing: set after the call, depending on the organisation's funding and the task
+  no_maintenance: true                    # written into every scoping document
+
+languages:
+  default: en
+  de_countries: [DE, AT, CH]              # German (Sie) for these; English everywhere else. No Dutch.
+
+# Appended by tools/gmail_draft.py, never written by the model. {source} is where the address was
+# published, from contacts.private.yaml. The opt-out reply "no" is recognised by gmail_draft.py sync.
+footer:
+  first_en: |
+    --
+    {name}, {role}
+    {organisation}, a student consultancy working with nonprofits and social enterprises
+    We found {email} on {source}. Not relevant? Reply "no" and we will not contact {org} again.
+  first_de: |
+    --
+    {name}, {role}
+    {organisation}, eine studentische Beratung für gemeinnützige Organisationen und Sozialunternehmen
+    Ihre Adresse {email} stammt von {source}. Kein Interesse? Antworten Sie mit "nein", dann schreiben wir {org} nicht wieder.
+  follow_en: |
+    --
+    {name}, {organisation}. Not relevant? Reply "no" and we will not write again.
+  follow_de: |
+    --
+    {name}, {organisation}. Kein Interesse? Antworten Sie mit "nein", dann schreiben wir nicht wieder.
+
+# Who a good client is. The researcher checks these from public pages before anything is drafted.
+targets:
+  segments: [nonprofit, social_enterprise, woningcorporatie]
+  must_have:
+    - one visible repetitive workflow (intake, funder reporting, volunteer scheduling, donor admin, case handling), with the page that shows it
+    - an identifiable funding source (subsidies, foundations, own revenue, rent), with the page that shows it
+  staff_guide: [20, 100]                  # a guide, not a rule: a paid, interesting project matters more
+  regions_in_order: [Delft, Rotterdam, Randstad, NL, EU]
+  woningcorporaties: a few in Rotterdam, cold email like everyone else
+  who_to_write_to:
+    - "20-50 staff: the director (directeur / bestuurder / Geschäftsführung)"
+    - "50-100 staff: the head of operations (bedrijfsvoering / operations)"
+    - "no named person published: info@ with the director's name in the subject"
+  max_people_per_org: 2
+
+# Split test: alternate by draft order, never pick the arm per organisation.
+arms:
+  A: track record leads (anonymised), one line about their organisation
+  B: value-first leads (two automation ideas from their own site), one line of track record
+
+# Tier 1 = the best ~150: full research card, two ideas, Manuel approves each first email.
+# Tier 2 = the rest: one verified fact, sector workflow, lint + checker agent, sent automatically.
+tiers:
+  tier1_target: 150
+
+approval:
+  tier1_first_emails: true                # every tier-1 first email needs Manuel's approval
+  all_first_emails_until_sent: 30         # "a few approve": the first 30 first emails of any tier too
+  follow_ups: false                       # follow-ups go automatically
+
+# Shared registry so nobody in the branch writes to the same organisation twice.
+registry:
+  backend: local                          # switch to monday once the board exists (docs/setup.md)
+  block_days: 90                          # someone else's contact blocks the domain for this long
+  hold_statuses: [client, in_talks, call_booked, replied, opted_out]   # these block others regardless of date
+  monday:
+    board_id: TODO
+    token_env: MONDAY_API_TOKEN           # or the file private/monday_token.txt
+    columns:                              # column IDs from the board (docs/setup.md, step 3)
+      domain: {id: TODO, type: text}
+      owner: {id: TODO, type: text}
+      status: {id: TODO, type: text}
+      last_contact: {id: TODO, type: date}
+      blocked_until: {id: TODO, type: date}
