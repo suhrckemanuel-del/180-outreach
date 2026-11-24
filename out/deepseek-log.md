@@ -57,3 +57,20 @@ No model calls in any code; standard library + `requirements.txt` only. Nothing 
 - Assumption: `--org` is the pipeline org id; a call for an unknown org is allowed but warns, because the
   dossier track builds the call list before `add-org`. No staff names are stored in `calls.yaml`; only the
   org id, date, outcome and a free-text note.
+
+## T5. `tools/verdict_harness.py`
+
+- Files: `tools/verdict_harness.py` (new), `tools/selftest.py`, this log.
+- What it is: reads `state/enrich/*.digest.md`, builds the job-A prompt from
+  `docs/prompts/cheap-model-context.md` (the job-A block + the Never section, then the digest), calls the
+  user's `model(prompt) -> str` loaded from the Python file in `VERDICT_MODEL` / `--model`, validates the
+  record (fit|reject, tier 1-3, reason <= 25 words, evidence_url a substring of that digest), compares the
+  verdict with the `VERDICT:` line of `cards/*.md`, and prints the match rate plus every mismatch and every
+  invalid record. Exit 1 only for unusable records; a wrong verdict is data, not a failure.
+- Tests added: 12 (`harness:` lines): prompt contains the rule and the digest; fenced JSON; prose rejected;
+  each validation rule; the two stubbed digests matching the answer key 2/2; a raising model reported; a
+  missing model file refused. No test or fixture calls a real model or network.
+- Selftest after: **121 passed, 0 failed**.
+- Assumption: the shared context doc lives with the code (`REPO/docs`), not under a tenant, so the harness
+  reads it from `tools/verdict_harness.py`'s parent even when `OUTREACH_ROOT` points at a throwaway copy.
+- Not done: no batch run against a real cheap model (that needs the user's model file).

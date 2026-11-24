@@ -646,6 +646,63 @@ check("calls: calls never enter pipeline.yaml, and send.py never reads them",
       and "calls.yaml" not in (HERE / "send.py").read_text(encoding="utf-8")
       and "import calls" not in (HERE / "send.py").read_text(encoding="utf-8"))
 
+# ---------- T5: verdict_harness.py (model supplied from outside the repo, stubbed here) ----------
+import verdict_harness as vh  # noqa: E402
+
+D = T / "state" / "enrich"
+D.mkdir(parents=True, exist_ok=True)
+(D / "alpha.nl.digest.md").write_text(
+    "# alpha.nl (nl, 4 pages read)\nFORMS: Naam, Hulpvraag, School [https://alpha.nl/aanmelden]\n"
+    "ADDRESS: aanmelden@alpha.nl, printed [https://alpha.nl/contact]\n", encoding="utf-8")
+(D / "beta.nl.digest.md").write_text(
+    "# beta.nl (nl, 2 pages read)\nFORMS: newsletter form only [https://beta.nl/]\n"
+    "ADDRESS: info@beta.nl, printed [https://beta.nl/contact]\n", encoding="utf-8")
+(T / "cards" / "alpha.md").write_text("ORG: Alpha https://alpha.nl\nVERDICT: FIT tier 2: a form with steps\n", encoding="utf-8")
+(T / "cards" / "beta.md").write_text("ORG: Beta https://beta.nl\nVERDICT: REJECT tier 3: no workflow\n", encoding="utf-8")
+MODEL = TMP / "model_stub.py"
+MODEL.write_text(
+    "import json\n\n"
+    "def model(prompt):\n"
+    "    if 'alpha.nl' in prompt:\n"
+    "        return '```json\\n' + json.dumps({'domain': 'alpha.nl', 'verdict': 'fit', 'tier': 2,\n"
+    "            'reason': 'aanmelden form with steps and an address', 'evidence_url': 'https://alpha.nl/aanmelden'}) + '\\n```'\n"
+    "    if 'beta.nl' in prompt:\n"
+    "        return json.dumps({'domain': 'beta.nl', 'verdict': 'reject', 'tier': 3,\n"
+    "            'reason': 'newsletter only', 'evidence_url': 'https://beta.nl/'})\n"
+    "    raise RuntimeError('boom')\n", encoding="utf-8")
+
+ctx = vh.context_text()
+prompt = vh.build_prompt(ctx, (D / "alpha.nl.digest.md").read_text(encoding="utf-8"))
+check("harness: the prompt carries the job-A rule and the digest",
+      "A. **Verdict.**" in prompt and "## Never" in prompt and "https://alpha.nl/aanmelden" in prompt)
+check("harness: a fenced JSON reply is read", vh.parse_json('```json\n{"verdict": "fit"}\n```')[0] == {"verdict": "fit"})
+check("harness: prose without JSON is an error", vh.parse_json("I think it is a fit")[0] is None)
+dig = (D / "alpha.nl.digest.md").read_text(encoding="utf-8")
+good = {"domain": "alpha.nl", "verdict": "fit", "tier": 2, "reason": "short and true",
+        "evidence_url": "https://alpha.nl/aanmelden"}
+check("harness: a well-formed record has no problems", vh.validate(good, dig) == [])
+check("harness: a reason over 25 words fails", vh.validate({**good, "reason": "word " * 26}, dig))
+check("harness: a tier outside 1-3 fails", vh.validate({**good, "tier": 4}, dig))
+check("harness: a verdict other than fit/reject fails", vh.validate({**good, "verdict": "maybe"}, dig))
+check("harness: an evidence URL the digest does not contain fails",
+      vh.validate({**good, "evidence_url": "https://alpha.nl/verzonnen"}, dig))
+model = vh.load_model(str(MODEL))
+rows = vh.compare(model, vh.digests(D), vh.answer_key(T / "cards"), ctx)
+s = vh.summarise(rows)
+check("harness: both stubbed verdicts match the answer key", s["total"] == 2 and s["matched"] == 2 and not s["invalid"])
+
+def raising(prompt):
+    raise RuntimeError("boom")
+
+rows = vh.compare(raising, [("alpha.nl", dig)], {"alpha.nl": "fit"}, ctx)
+check("harness: a model that raises is reported, not crashed on",
+      rows[0]["error"].startswith("model raised RuntimeError") and vh.summarise(rows)["matched"] == 0)
+try:
+    vh.load_model(str(TMP / "geen-model.py"))
+    check("harness: a missing model file is refused", False)
+except SystemExit:
+    check("harness: a missing model file is refused", True)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 sys.exit(1 if FAILED else 0)
