@@ -590,6 +590,62 @@ check("enrich T2: the team contact page (with the address) is read, not just the
 check("enrich T2: guaranteed pages still fit the request budget", len(enrich.choose_pages(
     "https://nav.nl/", NAV["https://nav.nl/"], enrich.Site("nav.nl", fetcher=stub_pages(NAV)), [])) <= enrich.MAX_PAGES)
 
+# ---------- T4: calls.py, the call track (never in the send path) ----------
+import io  # noqa: E402
+from contextlib import redirect_stdout  # noqa: E402
+
+import calls  # noqa: E402
+
+calls.CALLS = T / "state" / "calls.yaml"
+(T / "dossiers").mkdir(exist_ok=True)
+(T / "dossiers" / "orga.md").write_text(
+    "# Org A\n\n## Opener\nHello, I am calling about your volunteer intake. Is now a good time?\n\n"
+    "Phone: 010-1234567\n", encoding="utf-8")
+calls.add(ns(org="org-a", due="2026-12-01", script="dossiers/orga.md", phone=None))
+calls.add(ns(org="org-b", due="2026-11-25", script=None, phone=None))
+try:
+    calls.add(ns(org="org-a", due="2026-12-02", script=None, phone=None))
+    check("calls: a second planned call for the same organisation is refused", False)
+except SystemExit:
+    check("calls: a second planned call for the same organisation is refused", True)
+
+
+def calls_out(fn, *args, **kw):
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        fn(Namespace(*args, **kw)) if args else fn(Namespace(**kw))
+    return buf.getvalue()
+
+
+today_text = calls_out(calls.due, date=dt.date(2026, 11, 25))
+check("calls: due today lists only the call that is due", "org-b" in today_text and "org-a" not in today_text)
+all_text = calls_out(calls.due, date=dt.date(2026, 12, 1))
+check("calls: due lists both when both are due, with the dossier's number and opener",
+      "org-a" in all_text and "org-b" in all_text and "010-1234567" in all_text and "volunteer intake" in all_text)
+check("calls: list shows the planned calls by due date",
+      [x.split()[1] for x in calls_out(calls.list_calls, all=False).strip().splitlines()] == ["org-b", "org-a"])
+
+calls.log(ns(org="org-b", outcome="call_booked", note="Tuesday 10:00"))
+p = tenant.load(tenant.PIPELINE)
+org_b = next(o for o in p["orgs"] if o["id"] == "org-b")
+check("calls: call_booked is recorded and runs pipeline.py set --outcome call",
+      org_b.get("outcome") == "call" and any(c["org"] == "org-b" and c["status"] == "done" for c in calls.load()))
+calls.log(ns(org="org-a", outcome="callback", note=None))
+try:
+    calls.log(ns(org="org-a", outcome="no_answer", note=None))
+    check("calls: logging an organisation with no planned call is refused", False)
+except SystemExit:
+    check("calls: logging an organisation with no planned call is refused", True)
+
+calls.add(ns(org="org-e", due="2026-12-03", script=None, phone=None))
+calls.log(ns(org="org-e", outcome="not_interested", note=None))
+check("calls: not_interested suppresses the domain like an email opt-out",
+      "orge.nl" in (tenant.load(tenant.SUPPRESSION).get("domains") or {}))
+check("calls: calls never enter pipeline.yaml, and send.py never reads them",
+      all("calls" not in o for o in tenant.load(tenant.PIPELINE)["orgs"])
+      and "calls.yaml" not in (HERE / "send.py").read_text(encoding="utf-8")
+      and "import calls" not in (HERE / "send.py").read_text(encoding="utf-8"))
+
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 sys.exit(1 if FAILED else 0)

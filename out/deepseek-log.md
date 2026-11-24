@@ -32,3 +32,28 @@ No model calls in any code; standard library + `requirements.txt` only. Nothing 
 - Note: the pre-existing uncommitted edits to `tools/selftest.py` (made before this session) were
   committed with T1 because the file is one unit; nothing in `private/`, `drafts/`, `state/` or `data/`
   was staged.
+
+## T3. Lead-list scripts (`docs/prompts/2026-11-25-s2-lead-lists.md`)
+
+- **Skipped, as the prompt requires.** `docs/decisions-2026-11-25.md` has every `Answer:` blank (D1, D2,
+  D3, D4, D5, D6, D17). A blank answer means "not decided: the session skips that part and says so", and
+  every build item in S2 hangs off one of those decisions (regional ANBI needs D1, LRK needs D2, the
+  segment/mark changes need D1, the list-request emails need D6, committing needs D17).
+- Files: none. Tests added: none. Selftest unchanged at that point: **102 passed, 0 failed**.
+- Nothing was written to `targets.yaml`, `pipeline.yaml` or `tenant.yaml`.
+
+## T4. `tools/calls.py`
+
+- Files: `tools/calls.py` (new), `tools/selftest.py`, this log.
+- What it is: `add` / `list` / `due` / `log` over `tenants/<t>/state/calls.yaml` (gitignored). `due` prints
+  the organisation, the number printed in its dossier (or `--phone`), the dossier path and its opener.
+  `log --outcome call_booked` runs `pipeline.py set --outcome call`; `not_interested` suppresses the domain
+  and sets the org `opted_out`, the same effect as an email opt-out. It never dials, fetches or sends.
+- Tests added: 7 (`calls:` lines): refusing a second open call; due-today vs due-later; the number and
+  opener are printed; list order by due date; call_booked reaching the pipeline; refusing a log with no
+  planned call; not_interested suppressing; calls never entering `pipeline.yaml` and `send.py` never
+  reading `calls.yaml`.
+- Selftest after: **110 passed, 0 failed**.
+- Assumption: `--org` is the pipeline org id; a call for an unknown org is allowed but warns, because the
+  dossier track builds the call list before `add-org`. No staff names are stored in `calls.yaml`; only the
+  org id, date, outcome and a free-text note.
