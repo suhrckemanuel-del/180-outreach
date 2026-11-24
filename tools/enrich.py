@@ -3,7 +3,9 @@
     python tools/enrich.py <domain> [--json]      facts record (YAML) + digest for one organisation
     python tools/enrich.py score <domain>         score from the saved facts record
     python tools/enrich.py calibrate              score the 28 batch-1 cards, report recall on the fits
-    python tools/enrich.py batch --pick N [--segment S]   enrich + score the next N 'new' rows, ranked table
+    python tools/enrich.py batch --pick N [--segment S] [--csv PATH]
+                                                  enrich + score the next N 'new' rows, ranked table;
+                                                  --csv also writes out/shortlist.csv (no names, no addresses)
 
 What it reads: the homepage, robots.txt, sitemap.xml and up to 8 more pages of the organisation's own
 site, chosen by words in the URL. It obeys robots.txt, caches every page for 7 days in
@@ -28,7 +30,9 @@ SCORE CALIBRATION (2026-11-24, `python tools/enrich.py calibrate`, 28 batch-1 ca
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import re
 import sys
@@ -852,6 +856,46 @@ def pick_rows(n: int, segment: str | None, cities=("delft", "rotterdam")) -> lis
     return rows[:n]
 
 
+SHORTLIST_COLUMNS = ["domain", "name", "city", "segment", "score", "verdict", "reasons",
+                     "address_found", "staff_estimate", "fetched_at"]
+SHORTLIST_DEFAULT = "out/shortlist.csv"
+STAFF_UNITS = ("fte", "medewerkers", "collega's", "collega’s", "professionals", "werknemers", "employees", "staff")
+
+
+def staff_estimate(facts: dict) -> str:
+    """The largest headcount a page actually stated, or '' when none did. Never inferred."""
+    nums = [x["n"] for x in facts.get("staff", []) if x.get("unit") in STAFF_UNITS]
+    return str(max(nums)) if nums else ""
+
+
+def shortlist_record(row: dict, facts: dict, sc: dict) -> dict:
+    """One shortlist row. It deliberately carries no person's name and no address: address_found is
+    yes/no and the reasons are signal names, so the file can be pasted anywhere without contact data."""
+    reasons = ";".join(f"{n}:{p:+d}" for n, p in sc.get("parts", []))
+    if sc.get("skip"):
+        reasons = f"gate:{sc['skip']}" + (";" + reasons if reasons else "")
+    return {
+        "domain": facts.get("domain") or "",
+        "name": row.get("name") or facts.get("domain") or "",
+        "city": row.get("city") or "",
+        "segment": row.get("segment") or "",
+        "score": sc.get("score", ""),
+        "verdict": "GO" if sc.get("go") else "below",
+        "reasons": reasons,
+        "address_found": "yes" if facts.get("role_match") else "no",
+        "staff_estimate": staff_estimate(facts),
+        "fetched_at": facts.get("fetched") or "",
+    }
+
+
+def shortlist_csv(records: list[dict]) -> str:
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=SHORTLIST_COLUMNS, lineterminator="\n", extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(records)
+    return buf.getvalue()
+
+
 def cmd_batch(a):
     seen_d, rows = set(), []
     for r in pick_rows(a.pick, a.segment):  # one row per host, so threads never hit the same site together
@@ -872,23 +916,32 @@ def cmd_batch(a):
 
     with ThreadPoolExecutor(max_workers=4) as ex:
         results = list(ex.map(work, rows))
-    table, js_pages, all_pages = [], 0, 0
+    ranked, js_pages, all_pages = [], 0, 0
     for r, facts, err in results:
         d = tenant.domain_of(r.get("website") or "")
         if not facts:
-            table.append((-99, d, r.get("name") or d, "ERROR", err))
+            ranked.append(((-99, d), (-99, d, r.get("name") or d, "ERROR", err), None))
             continue
         js_pages += len(facts["js_needed"])
         all_pages += len(facts["pages"])
         sc = score(facts, r, suppressed=sup, registry_blocked=registry_block(d))
-        table.append((sc["score"], d, r.get("name") or d, "skip: " + sc["skip"] if sc["skip"] else ("GO" if sc["go"] else "below"),
-                      "; ".join(f"{p:+d} {n}" for n, p in sc["parts"])[:110]))
-    table.sort(key=lambda x: -x[0])
-    for s, d, name, verdict, why in table:
+        verdict = "skip: " + sc["skip"] if sc["skip"] else ("GO" if sc["go"] else "below")
+        why = "; ".join(f"{p:+d} {n}" for n, p in sc["parts"])[:110]
+        ranked.append(((sc["score"], d), (sc["score"], d, r.get("name") or d, verdict, why),
+                       shortlist_record(r, facts, sc)))
+    ranked.sort(key=lambda x: -x[1][0])
+    for _, (s, d, name, verdict, why), _ in ranked:
         print(f"{s:>3}  {verdict:<26} {d:<34} {name[:34]:<34} {why}")
-    go = sum(1 for t in table if t[3] == "GO")
-    print(f"\n{len(table)} organisations, {go} go to the model, {time.time() - t0:.0f}s, "
+    go = sum(1 for _, t, _ in ranked if t[3] == "GO")
+    print(f"\n{len(ranked)} organisations, {go} go to the model, {time.time() - t0:.0f}s, "
           f"js_needed on {js_pages}/{all_pages} pages ({100 * js_pages / max(all_pages, 1):.0f}%)")
+    if a.csv:
+        path = Path(a.csv)
+        path = path if path.is_absolute() else tenant.ROOT / path
+        records = [rec for _, _, rec in ranked if rec]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(shortlist_csv(records), encoding="utf-8", newline="")
+        print(f"shortlist: {path}  ({len(records)} rows, {go} GO)")
 
 
 CARD_LINE = re.compile(r"^ORG:.*?(https?://\S+)", re.M)
@@ -947,6 +1000,8 @@ def main():
         ap = argparse.ArgumentParser(prog="enrich.py batch")
         ap.add_argument("--pick", type=int, required=True)
         ap.add_argument("--segment")
+        ap.add_argument("--csv", nargs="?", const=SHORTLIST_DEFAULT, default=None, metavar="PATH",
+                        help=f"also write the ranked shortlist as CSV (default {SHORTLIST_DEFAULT})")
         return cmd_batch(ap.parse_args(argv[1:]))
     if argv and argv[0] == "calibrate":
         ap = argparse.ArgumentParser(prog="enrich.py calibrate")

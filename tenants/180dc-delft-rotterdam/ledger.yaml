@@ -34,6 +34,18 @@ claims:
     source: tenant description, confirm against 180dc.org
     wording: "a student consultancy working with nonprofits and social enterprises"
 
+  - id: TR-STARTUP
+    usable: true
+    source: Manuel, 2026-11-24 (he works at an AI startup building automations end to end)
+    wording: "I also build end-to-end automations at an AI startup."
+    note: anonymised, no client or company name; details only on the call
+
+  - id: BR-PROJECT-SHAPE
+    usable: true
+    source: Manuel, 2026-11-24 (decision D13, reworded)
+    wording: "Our projects run about four months, and we found AI automation is where we help clients most."
+    note: no dates; Feb-May wording not used
+
   - id: BR-PAST-WORK
     usable: false
     source: 180dc-ai/portfolio-workbench source packs (market assessment, operating strategy, financial sustainability, brand, digital presence)

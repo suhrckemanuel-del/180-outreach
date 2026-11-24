@@ -7,7 +7,10 @@ Usage:
     python tools/pipeline.py add-org --id stichting-x --name "Stichting X" --domain stichtingx.nl \
         --city Rotterdam --country NL --segment nonprofit --tier 1 --card cards/stichting-x.md
     python tools/pipeline.py add-contact --org stichting-x --id stichting-x-jan --name "Jan de Vries" \
-        --title Directeur --email jan@stichtingx.nl --source https://stichtingx.nl/over-ons/team
+        --title Directeur --email jan@stichtingx.nl --source https://stichtingx.nl/over-ons/team \
+        [--basis "legitimate interest: ..."]
+        -> refuses an address whose domain has no mail server (MX lookup; refuses too if DNS is down)
+        -> stores the address, its source page and the lawful basis in private/contacts.private.yaml
     python tools/pipeline.py add-touch --org stichting-x --contact stichting-x-jan --kind first         --workflows "matching volunteers to shifts" "the monthly funder report"
         -> prints the touch id, its arm and the draft file to write (drafts/<touch>.txt)
     python tools/pipeline.py set --org stichting-x --status closed|paused|active [--outcome call|proposal|signed|no]
@@ -67,6 +70,41 @@ def add_org(a):
     print(f"added {a.id} ({domain}, {lang}, tier {a.tier})")
 
 
+DEFAULT_BASIS = ("legitimate interest: address published by the organisation at {source}; "
+                 "offer relevant to its work")
+
+
+class DnsUnreachable(Exception):
+    pass
+
+
+def _resolve_mx(domain: str) -> list[str]:
+    """The domain's mail servers ([] = none). Raises DnsUnreachable when DNS gives no answer either
+    way. The self-test replaces this function, so no test does a real lookup."""
+    import dns.exception
+    import dns.resolver
+    try:
+        answer = dns.resolver.resolve(domain, "MX", lifetime=10)
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return []
+    except dns.exception.DNSException as exc:  # timeout, no nameservers, SERVFAIL, no resolver config
+        raise DnsUnreachable(f"{type(exc).__name__}: {exc}") from exc
+    hosts = [str(r.exchange).rstrip(".") for r in answer]
+    return [h for h in hosts if h]  # a null MX (".") means the domain takes no mail
+
+
+def mx_problem(domain: str) -> str | None:
+    """Why an address at this domain must not be added, or None when it has a mail server."""
+    try:
+        hosts = _resolve_mx(domain)
+    except DnsUnreachable as exc:
+        return (f"could not reach DNS to check {domain} for a mail server ({exc}). "
+                "Not adding: check the connection and run add-contact again")
+    if not hosts:
+        return f"{domain} has no mail server (no MX record); the address would bounce"
+    return None
+
+
 def add_contact(a):
     if not a.source.startswith("http"):
         sys.exit("--source must be the URL where the address is published")
@@ -75,6 +113,10 @@ def add_contact(a):
     supp = tenant.load(tenant.SUPPRESSION, {}) or {}
     if a.email.lower() in (supp.get("addresses") or {}):
         sys.exit(f"{a.email} is on the suppression list")
+    problem = mx_problem(tenant.domain_of(a.email))
+    if problem:
+        sys.exit(f"not adding {a.email}: {problem}")
+    basis = (getattr(a, "basis", None) or DEFAULT_BASIS).strip().format(source=a.source)
     with locked("claude"):
         p = tenant.load(tenant.PIPELINE, {})
         org = _org(p, a.org)
@@ -83,7 +125,7 @@ def add_contact(a):
         org["contacts"].append({"id": a.id, "name": a.name, "title": a.title})
         tenant.save(tenant.PIPELINE, p)
         contacts = tenant.load(tenant.CONTACTS, {}) or {}
-        contacts[a.id] = {"email": a.email.strip(), "source": a.source, "name": a.name}
+        contacts[a.id] = {"email": a.email.strip(), "source": a.source, "basis": basis, "name": a.name}
         tenant.save(tenant.CONTACTS, contacts)
     print(f"contact {a.id} added to {a.org}")
 
@@ -160,6 +202,8 @@ def main():
     for f in ("org", "id", "name", "title", "email", "source"):
         c.add_argument(f"--{f}", required=True)
     c.add_argument("--allow-other-domain", action="store_true")
+    c.add_argument("--basis", help="lawful basis for writing to this address (default: legitimate interest, "
+                                   "published at --source); see docs/lawful-basis.md")
     t = sub.add_parser("add-touch")
     t.add_argument("--org", required=True)
     t.add_argument("--contact", required=True)

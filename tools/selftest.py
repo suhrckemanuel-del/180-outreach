@@ -723,6 +723,52 @@ try:
 except SystemExit:
     check("harness: a missing model file is refused", True)
 
+# ---------- W2: the CSV shortlist ----------
+import enrich  # noqa: E402
+
+FACTS = {"domain": "janvoorbeeld.nl", "fetched": "2026-11-24T12:00:00",
+         "role_match": {"address": "info@janvoorbeeld.nl"},
+         "staff": [{"n": 4, "unit": "fte"}, {"n": 24, "unit": "medewerkers"}]}
+SC_GO = {"score": 6, "skip": None, "go": True,
+         "parts": [("form with 3+ fields or aanmelden/inschrijven/intake in nav", 3), ("staff about 8-100", 1)]}
+ROW = {"name": "Stichting Voorbeeld", "city": "Delft", "segment": "nonprofit"}
+SHORT = enrich.shortlist_csv([enrich.shortlist_record(ROW, FACTS, SC_GO)])
+check("enrich W2: the shortlist header is the agreed column order",
+      SHORT.splitlines()[0] == ",".join(enrich.SHORTLIST_COLUMNS))
+check("enrich W2: one row per organisation with score, verdict, reasons and printed staff size",
+      "janvoorbeeld.nl,Stichting Voorbeeld,Delft,nonprofit,6,GO," in SHORT
+      and "staff about 8-100:+1" in SHORT and ",yes,24,2026-11-24T12:00:00" in SHORT)
+GATED = enrich.shortlist_csv([enrich.shortlist_record(
+    ROW, {**FACTS, "role_match": None},
+    {"score": 9, "skip": "no on-domain address", "go": False, "parts": []})])
+check("enrich W2: a gated row says below, names the gate, and still shows no address",
+      ",below,gate:no on-domain address," in GATED and ",no,24,2026-11-24T12:00:00" in GATED)
+check("enrich W2: the shortlist never contains an @ or a person's name",
+      "@" not in SHORT and "@" not in GATED and "Manuel" not in SHORT)
+check("enrich W2: --csv without a path writes out/shortlist.csv", enrich.SHORTLIST_DEFAULT == "out/shortlist.csv")
+
+# ---------- W3: tools/report.py ----------
+import report  # noqa: E402
+
+t0 = dt.datetime.now()
+REPORT_PATH = report.write_report()
+REPORT_HTML = REPORT_PATH.read_text(encoding="utf-8")
+seconds = (dt.datetime.now() - t0).total_seconds()
+check("report: writes a single self-contained report.html", REPORT_PATH.exists() and REPORT_PATH.name == "report.html")
+check("report: carries no email address and no @ anywhere in the page", "@" not in REPORT_HTML)
+check("report: carries no contact person's name", "P One" not in REPORT_HTML)
+check("report: a bare mailbox fragment such as management@ is scrubbed too",
+      "@" not in report.scrub("write to management@ only", set()))
+check("report: has the six sections", all(x in REPORT_HTML for x in
+      ("Headline", "The funnel", "Batch 1", "Shortlist", "Blocked on a decision", "Next 10 days")))
+check("report: says to run the shortlist when out/shortlist.csv is absent",
+      "run enrich.py batch --csv first" in REPORT_HTML)
+check("report: no external request in src or href",
+      "http://" not in REPORT_HTML and "https://" not in REPORT_HTML
+      and "<script" not in REPORT_HTML.lower())
+check(f"report: under 200 KB and under 2s (rendered in {seconds:.2f}s)",
+      len(REPORT_HTML.encode("utf-8")) < 200_000 and seconds < 2)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 sys.exit(1 if FAILED else 0)

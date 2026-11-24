@@ -118,3 +118,30 @@ No model calls in any code; standard library + `requirements.txt` only. Nothing 
   `gmail_draft.py`, `pipeline.py`, `registry.py`, `tenant.py`, `tenant.yaml`, `ledger.yaml`,
   `limits.yaml`, `pipeline.yaml`, `targets.yaml`, or anything under `private/`, `state/`, `drafts/`,
   `data/`. No email address was written, guessed or constructed.
+
+## W0-W6. Second session, 2026-11-24: report, explainer, handoff
+
+- Answers given in the session prompt: D1, D2, D17 and COMMIT_DOCS were all blank.
+  - W0 skipped: nothing was written into `docs/decisions-2026-11-25.md`; only D0 is answered.
+  - W1 skipped: COMMIT_DOCS was blank, so the planning docs were not committed.
+  - D17 was blank, so **no commits at all** were made. W2-W5 live in the working tree and are listed
+    in `HANDOFF.md`; W6 is this log entry.
+- W2 done: `enrich.py batch --csv [PATH]` (default `out/shortlist.csv`). Ten columns, no personal
+  names and no addresses (address_found is yes/no); the terminal table is unchanged. 5 checks.
+- W3 done: `tools/report.py` writes `out/report.html` (16.4 KB, about 0.7 s, light CSS only, no
+  external file, no @ and no contact name anywhere in the page) and prints `docs/next-10-days.md`.
+  8 checks.
+- W4 done: `docs/explainer/index.html`, 5 slides, arrow-key and click navigation, 8 "why we built it
+  this way" boxes, zero external requests (checked in the browser: one document request, no console
+  errors). Numbers rounded; it points at report.html for live figures.
+- W5 done: `HANDOFF.md` at the repo root.
+- W6 done: selftest **142 passed, 0 failed** (was 129); report written; the safe commands in the
+  handoff's run tables were executed, and the ones that send or write to Gmail are marked as not run.
+- Bugs found while checking the real data, both fixed and covered:
+  - one card's reason mentions `management@` with no domain, which the email scrub missed;
+  - a test contact named `S` made the name scrub rewrite single letters inside CSS class names, so
+    scrubbing now uses word boundaries, a three-character minimum, and runs on text fields only.
+- Not done, deliberately: no push, no commit, no email, no Gmail write, no OAuth, no model call, no
+  read of `private/`, no change to Manuel's uncommitted files, no edit of `targets.yaml`.
+- Still open: D1-D17 (D0 answered), and `out/shortlist.csv` was not generated, so the report shows the
+  gate stage as "not measured yet" rather than guessing.
