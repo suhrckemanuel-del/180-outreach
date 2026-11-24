@@ -87,3 +87,34 @@ No model calls in any code; standard library + `requirements.txt` only. Nothing 
 - Not done: no case asserts a body-only out-of-office without any auto header, because `classify` reads
   those as human today; that is a known limit of the current rule, recorded here rather than papered over
   with a test that would lock in wrong behaviour.
+
+## T7. Docs
+
+- Files: `docs/enrich.md` (new), `docs/REPO-MAP.md`, this log.
+- `docs/enrich.md`: what `enrich.py` reads and writes, the request budget, the four commands, the 12 score
+  signals with their points, the calibration result on the 28 cards, and the known limits (staff only from
+  about/team pages, printed-only addresses, JS/PDF pages, heuristic page selection, 600-word digest).
+- `REPO-MAP.md`: new rows for `tools/enrich.py`, `tools/calls.py`, `tools/verdict_harness.py`, the
+  `docs/enrich.md` row, selftest count 75 -> 129, date bumped to 2026-11-25.
+- Tests added: none (docs only). Selftest after: **129 passed, 0 failed**.
+
+## Summary
+
+- Tasks done: T1, T2, T4, T5, T6, T7. T3 skipped because every decision in
+  `docs/decisions-2026-11-25.md` is blank, which the S2 prompt defines as "skip and say so".
+- Commits on `deepseek/work-2026-11-25` (nothing pushed, nothing merged):
+  `T1` staff counts, `T2` guaranteed funders/team pages, `T4` calls.py, `T5` verdict_harness.py,
+  `T6` reply-kit tests, `T7` docs.
+- Selftest: 96 passed / 0 failed at the start, **129 passed / 0 failed** at the end.
+- Tests added: 33 (3 T1, 3 T2, 7 T4, 12 T5, 8 T6); T7 adds none. 96 -> 129 checks.
+- Open assumptions: staff counts kept on the homepage unless the sentence before the figure names
+  partners/clients/funders; "those two always make the 8" read as two reserved page slots, budget
+  unchanged; `calls.py --org` is the pipeline org id and an unknown org only warns; the harness reads
+  the shared context doc from the repo root, not from `OUTREACH_ROOT`.
+- For a human decision: the blanks in `docs/decisions-2026-11-25.md` (D1-D6, D17) block T3 and every
+  lead-list script; and the harness has not been run against a real cheap model, which needs the user's
+  model file and, if it costs money, their go-ahead.
+- Not done, deliberately: no model call, no network in any test, no change to `send.py`,
+  `gmail_draft.py`, `pipeline.py`, `registry.py`, `tenant.py`, `tenant.yaml`, `ledger.yaml`,
+  `limits.yaml`, `pipeline.yaml`, `targets.yaml`, or anything under `private/`, `state/`, `drafts/`,
+  `data/`. No email address was written, guessed or constructed.
