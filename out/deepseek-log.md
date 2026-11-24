@@ -74,3 +74,16 @@ No model calls in any code; standard library + `requirements.txt` only. Nothing 
 - Assumption: the shared context doc lives with the code (`REPO/docs`), not under a tenant, so the harness
   reads it from `tools/verdict_harness.py`'s parent even when `OUTREACH_ROOT` points at a throwaway copy.
 - Not done: no batch run against a real cheap model (that needs the user's model file).
+
+## T6. Reply-kit classification tests
+
+- Files: `tools/selftest.py`, this log. `tools/gmail_draft.py` was **not** edited.
+- Tests added: 8 (`classify:` lines): Dutch out-of-office subject and a Dutch body carrying
+  `Auto-Submitted`; German `Abwesenheitsnotiz` subject and a German body with `X-Autoreply`;
+  "unsubscribe" mid-sentence in a longer English body; a `postmaster` bounce; a bounce with
+  `X-Failed-Recipients` and the subject "unsubscribe"; a bounce that also says "geen interesse"
+  (bounce must win over opt-out). All 8 passed against the current `classify` without any code change.
+- Selftest after: **129 passed, 0 failed**.
+- Not done: no case asserts a body-only out-of-office without any auto header, because `classify` reads
+  those as human today; that is a known limit of the current rule, recorded here rather than papered over
+  with a test that would lock in wrong behaviour.

@@ -291,6 +291,26 @@ check("classify: a real answer is human", gmail_draft.classify(msg("a@orga.nl", 
 check("classify: 'no' inside a real answer stays human",
       gmail_draft.classify(msg("a@orga.nl", snippet="No problem, we would like to talk next week."), me) == "human")
 
+# T6: reply-kit cases that had no test (out-of-office in Dutch and German, unsubscribe in a body, bounces)
+check("classify: a Dutch out-of-office auto-reply is auto",
+      gmail_draft.classify(msg("a@orga.nl", subject="Automatisch antwoord: ik ben afwezig"), me) == "auto")
+check("classify: a Dutch afwezigheid body with the Auto-Submitted header is auto",
+      gmail_draft.classify(msg("a@orga.nl", snippet="Ik ben tot 8 december afwezig en lees mijn mail niet.",
+                                Auto_Submitted="auto-replied"), me) == "auto")
+check("classify: a German out-of-office subject is auto",
+      gmail_draft.classify(msg("a@orga.de", subject="Abwesenheitsnotiz: bis 1. Dezember"), me) == "auto")
+check("classify: a German automatische Antwort body with X-Autoreply is auto",
+      gmail_draft.classify(msg("a@orga.de", snippet="Ich bin bis zum 1. Dezember nicht im Büro.",
+                                X_Autoreply="yes"), me) == "auto")
+check("classify: 'unsubscribe' inside a longer English body is an opt-out",
+      gmail_draft.classify(msg("a@orga.nl", snippet="Thanks, but please unsubscribe us from these mails."), me) == "opt_out")
+check("classify: a bounce from postmaster is a bounce, not an auto-reply",
+      gmail_draft.classify(msg("postmaster@orga.nl", subject="Undelivered Mail Returned to Sender"), me) == "bounce")
+check("classify: an X-Failed-Recipients notice is a bounce whatever the subject says",
+      gmail_draft.classify(msg("a@orga.nl", subject="unsubscribe", X_Failed_Recipients="p1@orga.nl"), me) == "bounce")
+check("classify: a bounce notice is never read as an opt-out",
+      gmail_draft.classify(msg("MAILER-DAEMON@example.org", subject="geen interesse"), me) == "bounce")
+
 # ---------- footer ----------
 c = {"email": "p1@orga.nl", "source": "https://orga.nl/team"}
 foot = gmail_draft.build_footer(tenant.config(), {"name": "ORG-A"}, c, follow=False, lang="en")
