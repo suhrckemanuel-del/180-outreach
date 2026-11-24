@@ -7,11 +7,13 @@ the opt-out line or reply in the wrong thread.
 Commands:
   auth                     one-time browser login for the tenant's inbox (docs/setup.md)
   auth-status [--check]    token present and working? --check exits 3 when the login is dead
-  draft --touch ID         lint the touch's body, add the footer, create (or replace) the Gmail draft
+  draft --touch ID         lint the touch's body, add the footer and the List-Unsubscribe header,
+                           create (or replace) the Gmail draft
   read --thread ID         print a thread's messages as plain text (for answering replies)
   sync [--days N] [--apply]  classify new messages in every sent thread, plus bounces:
-                           human | opt_out | bounce | auto. --apply records them in the pipeline,
-                           the suppression list and the registry
+                           human | opt_out | bounce | auto, plus "unsubscribe" mails sent by a
+                           recipient's mail client (a new message, not a reply in our thread).
+                           --apply records them in the pipeline, the suppression list and the registry
   mail-self --body FILE    mail the daily report or weekly review to the sending inbox
 
 Sending is not here. Only tools/send.py sends, through send_draft() below.
@@ -43,6 +45,9 @@ OPT_OUT_PHRASE = re.compile(
     r"abmelden|remove (me|us)|take (me|us) off|do not (contact|email|write)|don't (contact|email|write)|"
     r"niet (meer )?(mailen|benaderen)|nicht mehr (kontaktieren|schreiben|anschreiben)", re.I)
 OPT_OUT_SHORT = re.compile(r"^\s*(no|nee|nein|stop|nope)\b[\s.!,]*(thanks?|thank you|bedankt|danke)?[\s.!]*$", re.I)
+# A reply (or a mail client's unsubscribe link, from our List-Unsubscribe header) whose subject or
+# body is just "unsubscribe": an opt-out, like "no".
+UNSUBSCRIBE_ONLY = re.compile(r"^\s*((re|aw|fw|fwd|antw)\s*:\s*)*(unsubscribe|uitschrijven|afmelden|abmelden)[\s.!]*$", re.I)
 QUOTE_START = re.compile(r"\s(On|Op|Am|Le) .{5,80}(wrote|schreef|schrieb|a écrit)\s?:|-----Original|Von: |From: ", re.I)
 
 
@@ -122,6 +127,30 @@ def split_subject(text: str):
     return (m.group(2), text[m.end():].lstrip("\n")) if m else (None, text)
 
 
+def unsubscribe_header(cfg) -> str:
+    """List-Unsubscribe value: a mailto to the sending inbox, which sync reads as an opt-out."""
+    addr = str(cfg.get("sender", {}).get("address", "")).strip()
+    if not addr or addr.upper() == "TODO":
+        sys.exit("tenant.yaml sender.address is not set; the List-Unsubscribe header needs it")
+    return f"<mailto:{addr}?subject=unsubscribe>"
+
+
+def compose(cfg, org, contact, subject, body, *, follow: bool, lang: str, in_reply_to: str | None = None):
+    """The message every draft gets: first email, follow-up and chain alike."""
+    msg = EmailMessage()
+    msg["To"] = contact["email"]
+    s = cfg.get("sender", {})
+    if s.get("name") and s.get("address") and s["address"] != "TODO":
+        msg["From"] = f"{s['name']} <{s['address']}>"
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"] = in_reply_to
+    msg["Subject"] = subject
+    msg["List-Unsubscribe"] = unsubscribe_header(cfg)
+    msg.set_content(body.rstrip() + "\n\n" + build_footer(cfg, org, contact, follow=follow, lang=lang))
+    return msg
+
+
 def draft(args):
     cfg = tenant.config()
     pipeline = tenant.load(tenant.PIPELINE, {})
@@ -151,24 +180,16 @@ def draft(args):
 
     gm = service()
     assert_sender(gm)
-    msg = EmailMessage()
-    msg["To"] = contact["email"]
-    s = cfg.get("sender", {})
-    if s.get("name") and s.get("address") and s["address"] != "TODO":
-        msg["From"] = f"{s['name']} <{s['address']}>"
+    last_id = None
     if thread:
         th = gm.users().threads().get(userId="me", id=thread, format="metadata",
                                       metadataHeaders=["Subject", "Message-ID"]).execute()
         original = header(th["messages"][0], "Subject")
         subject = original if original.lower().startswith(("re:", "aw:")) else f"Re: {original}"
-        last_id = header(th["messages"][-1], "Message-ID")
-        if last_id:
-            msg["In-Reply-To"] = last_id
-            msg["References"] = last_id
+        last_id = header(th["messages"][-1], "Message-ID") or None
     if not subject:
         sys.exit("first email needs a 'Subject:' line at the top of the draft file")
-    msg["Subject"] = subject
-    msg.set_content(body.rstrip() + "\n\n" + build_footer(cfg, org, contact, follow=follow, lang=lang))
+    msg = compose(cfg, org, contact, subject, body, follow=follow, lang=lang, in_reply_to=last_id)
 
     payload = {"message": {"raw": base64.urlsafe_b64encode(msg.as_bytes()).decode()}}
     if thread:
@@ -236,12 +257,14 @@ def classify(message, me: str) -> str | None:
         return None
     if "mailer-daemon" in frm or "postmaster" in frm or header(message, "X-Failed-Recipients"):
         return BOUNCE
+    snippet = strip_quote(" " + (message.get("snippet") or ""))
+    if UNSUBSCRIBE_ONLY.match(header(message, "Subject")) or UNSUBSCRIBE_ONLY.match(snippet):
+        return OPT_OUT
     auto = header(message, "Auto-Submitted").lower()
     if (auto and auto != "no") or header(message, "X-Autoreply") or header(message, "X-Autorespond") \
             or header(message, "Precedence").lower() in ("auto_reply", "bulk", "junk") \
             or AUTO_SUBJECT.search(header(message, "Subject")):
         return AUTO
-    snippet = strip_quote(" " + (message.get("snippet") or ""))
     if OPT_OUT_SHORT.match(snippet) or OPT_OUT_PHRASE.search(snippet):
         return OPT_OUT
     return HUMAN
@@ -249,6 +272,35 @@ def classify(message, me: str) -> str | None:
 
 RANK = {HUMAN: 4, OPT_OUT: 3, BOUNCE: 2, AUTO: 1}
 META = ["From", "Subject", "Auto-Submitted", "X-Autoreply", "X-Autorespond", "Precedence", "X-Failed-Recipients"]
+
+
+def sender_address(message) -> str:
+    frm = header(message, "From")
+    m = re.search(r"<([^>]+)>", frm)
+    return (m.group(1) if m else frm).strip().lower()
+
+
+def match_unsubscribes(messages, pipeline, contacts, me, found):
+    """Unsubscribe mails from a recipient's mail client arrive as new messages, outside our thread.
+    Tie each to the sent touches of the contact with that address, or else of the organisation with
+    that domain. Adds (org_id, touch_id, opt_out, thread_id) rows to `found`."""
+    by_addr = {(c.get("email") or "").lower(): cid for cid, c in contacts.items()}
+    for m in messages:
+        if classify(m, me) != OPT_OUT:
+            continue
+        addr = sender_address(m)
+        cid = by_addr.get(addr)
+        dom = tenant.domain_of(addr)
+        for org in pipeline.get("orgs", []):
+            if cid is None and org.get("domain") != dom:
+                continue
+            for t in org.get("touches", []):
+                if t.get("status") != "sent" or t["id"] in found:
+                    continue
+                if cid is not None and t.get("contact") != cid:
+                    continue
+                found[t["id"]] = (org["id"], t["id"], OPT_OUT, t.get("gmail_thread_id"))
+    return found
 
 
 def scan(days: int):
@@ -282,6 +334,11 @@ def scan(days: int):
                     for t in org.get("touches", []):
                         if t.get("contact") == cid and t.get("status") == "sent" and t["id"] not in found:
                             found[t["id"]] = (org["id"], t["id"], BOUNCE, t.get("gmail_thread_id"))
+    # unsubscribe mails from the List-Unsubscribe header (not threaded with the original)
+    res = gm.messages().list(userId="me", q=f"subject:unsubscribe newer_than:{days}d -from:me").execute()
+    unsub = [gm.messages().get(userId="me", id=ref["id"], format="metadata", metadataHeaders=META).execute()
+             for ref in res.get("messages", [])]
+    match_unsubscribes(unsub, pipeline, contacts, me, found)
     return list(found.values())
 
 

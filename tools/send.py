@@ -11,7 +11,8 @@ Commands:
     python tools/send.py status
     python tools/send.py check --touch ID          reasons it would be held, changes nothing
     python tools/send.py ready --touch ID          drafted -> ready | needs_approval | held
-    python tools/send.py approvals                 what waits for Manuel, with the clean file to read
+    python tools/send.py approvals [--html]        what waits for Manuel, with the clean file to read;
+                                                   --html also writes state/approvals.html to read them in
     python tools/send.py approve --touch ID [...]  Manuel's approval (never in the unattended run)
     python tools/send.py run [--dry-run] [--max N] the send loop (scheduler only)
 
@@ -22,7 +23,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import random
+import re
 import sys
 import time
 
@@ -111,6 +114,8 @@ def content_and_contact_reasons(org, t, today) -> list[str]:
     addr = (c.get("email") or "").lower()
     if not addr or not c.get("source"):
         why.append("no address with a source in contacts.private.yaml")
+    if not str(c.get("basis") or "").strip():
+        why.append("no lawful basis for this contact in contacts.private.yaml (pipeline.py add-contact --basis)")
     supp = tenant.load(tenant.SUPPRESSION, {}) or {}
     if addr in (supp.get("addresses") or {}):
         why.append("address is on the suppression list")
@@ -233,13 +238,109 @@ def cmd_ready(a):
     return 0
 
 
-def cmd_approvals(_):
+APPROVALS_HTML = tenant.STATE / "approvals.html"
+CARD_FACTS = ("WORKFLOW", "FUNDING", "PEOPLE", "EMAILS", "VERDICT")
+URL = re.compile(r"https?://[^\s)\]>\"',]+")
+
+
+def _linked(text: str) -> str:
+    """Escape text; turn http(s) URLs into links (escaped too). Nothing else becomes markup."""
+    out, pos = [], 0
+    for m in URL.finditer(text or ""):
+        url = m.group(0).rstrip(".;:")
+        out.append(html.escape(text[pos:m.start()]))
+        out.append(f'<a href="{html.escape(url, quote=True)}" rel="noopener noreferrer">{html.escape(url)}</a>')
+        pos = m.start() + len(url)
+    out.append(html.escape((text or "")[pos:]))
+    return "".join(out)
+
+
+def card_facts(org) -> list[tuple[str, str]]:
+    path = tenant.DIR / (org.get("card") or "")
+    if not org.get("card") or not path.is_file():
+        return []
+    facts = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, _, val = line.partition(":")
+        if key.strip().upper() in CARD_FACTS and val.strip():
+            facts.append((key.strip().upper(), val.strip()))
+    return facts
+
+
+def _clean_text(org, t) -> str:
+    clean = tenant.DIR / (t.get("body") or "").replace(".txt", ".clean.txt")
+    if clean.is_file():
+        return clean.read_text(encoding="utf-8")
+    body = tenant.DIR / (t.get("body") or "")
+    if body.is_file():
+        return lint_email.lint(body.read_text(encoding="utf-8"), followup=t.get("kind") == "follow_up",
+                               lang=org.get("lang"))[2]
+    return "(draft file not found)"
+
+
+def _footer(org, contact, t) -> str:
+    try:
+        import gmail_draft
+        return gmail_draft.build_footer(tenant.config(), org, contact, follow=t.get("kind") == "follow_up",
+                                        lang=org.get("lang", "en"))
+    except Exception as exc:  # the page must still render without the Google libraries
+        return f"(footer not shown: {exc})"
+
+
+def write_approvals_html(waiting) -> None:
+    contacts = tenant.load(tenant.CONTACTS, {}) or {}
+    e = html.escape
+    sections = []
+    for o, t in waiting:
+        c = contacts.get(t.get("contact")) or {}
+        facts = "".join(f"<dt>{e(k.title())}</dt><dd>{_linked(v)}</dd>" for k, v in card_facts(o)) \
+            or "<dd>(no card)</dd>"
+        sections.append(f"""<section id="{e(t['id'], quote=True)}">
+<h2>{e(o.get('name', ''))}</h2>
+<p class="meta">touch <code>{e(t['id'])}</code> · tier {e(str(o.get('tier', '')))} · arm {e(str(t.get('arm', '')))} ·
+{e(str(o.get('segment', '')))} · {e(str(o.get('city', '')))} · {e(str(o.get('lang', '')))}</p>
+<p class="meta">to {e(c.get('email', '(no address)'))} ({e(c.get('name', '') or '')}), found on {_linked(c.get('source', ''))}</p>
+<pre class="email">{e(_clean_text(o, t).rstrip())}
+
+{e(_footer(o, c, t).rstrip())}</pre>
+<h3>Card facts</h3>
+<dl>{facts}</dl>
+</section>""")
+    ids = " ".join(t["id"] for _, t in waiting)
+    stamp = dt.datetime.now().isoformat(timespec="minutes")
+    page = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approvals waiting</title>
+<style>
+:root {{ color-scheme: light dark; --bg: #fff; --fg: #1b1b1b; --muted: #5c5c5c; --line: #d8d8d8; --box: #f6f6f4; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --bg: #161616; --fg: #e8e8e8; --muted: #a0a0a0; --line: #3a3a3a; --box: #202020; }} }}
+body {{ background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 0 auto; padding: 1rem; }}
+section {{ border-top: 1px solid var(--line); padding: 1rem 0 1.5rem; }}
+.meta {{ color: var(--muted); margin: .2rem 0; }}
+pre {{ background: var(--box); padding: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.5 ui-monospace, monospace; }}
+dt {{ font-weight: 600; margin-top: .5rem; }} dd {{ margin: 0 0 0 1rem; overflow-wrap: anywhere; }}
+a {{ color: inherit; }}
+</style></head><body>
+<h1>{len(waiting)} first emails waiting for approval</h1>
+<p class="meta">Tenant {e(tenant.NAME)}, written {e(stamp)}. Approving stays a command, run by Manuel:</p>
+<pre>python tools/send.py approve --touch {e(ids) if ids else 'ID [ID ...]'}</pre>
+{''.join(sections) or '<p>Nothing is waiting.</p>'}
+</body></html>
+"""
+    APPROVALS_HTML.parent.mkdir(parents=True, exist_ok=True)
+    APPROVALS_HTML.write_text(page, encoding="utf-8")
+
+
+def cmd_approvals(a):
     p = tenant.load(tenant.PIPELINE, {})
     waiting = [(o, t) for o in p.get("orgs", []) for t in o.get("touches", []) if t.get("status") == "needs_approval"]
     for o, t in waiting:
         clean = (t.get("body") or "").replace(".txt", ".clean.txt")
         print(f"{t['id']:34} {o['name'][:30]:30} tier {o.get('tier')} arm {t.get('arm')}  read: tenants/{tenant.NAME}/{clean}")
     print(f"{len(waiting)} waiting. Approve with: python tools/send.py approve --touch ID [ID ...]")
+    if getattr(a, "html", False):
+        write_approvals_html(waiting)
+        print(f"page: {APPROVALS_HTML}")
 
 
 def cmd_approve(a):
@@ -354,7 +455,8 @@ def main():
     for name in ("check", "ready"):
         s = sub.add_parser(name)
         s.add_argument("--touch", required=True)
-    sub.add_parser("approvals")
+    apv = sub.add_parser("approvals")
+    apv.add_argument("--html", action="store_true", help="also write state/approvals.html")
     ap_ = sub.add_parser("approve")
     ap_.add_argument("--touch", nargs="+", required=True)
     r = sub.add_parser("run")

@@ -1,6 +1,6 @@
 # Repo map
 
-Every file in this repo, what it is for, and how the pieces connect. Updated 2026-11-23.
+Every file in this repo, what it is for, and how the pieces connect. Updated 2026-11-25.
 Start with `README.md` for the idea, `docs/handoff-2026-11-21.md` for where the work stands.
 
 ## How the pieces connect
@@ -36,7 +36,7 @@ or by Manuel, sends.
 |---|---|
 | `README.md` | What the kit does and how to start. |
 | `CLAUDE.md` | Rules every Claude session follows here: never send, never approve, addresses only from the organisation's own pages, claims only from the ledger, token rules, writing rules. |
-| `requirements.txt` | Python dependencies (PyYAML, Google API client and auth). |
+| `requirements.txt` | Python dependencies (PyYAML, Google API client and auth, dnspython for the MX check). |
 | `.gitignore` | Keeps `tenants/*/private/`, `tenants/*/state/`, `tenants/*/drafts/` and `data/` out of git. |
 | `.claude/agents/researcher.md` | Haiku agent: researches 1-5 organisations, writes one card each with a FIT/REJECT verdict and tier. Loads only when the session is opened in this repo. |
 | `.claude/agents/checker.md` | Haiku agent: second reader for a batch of drafts, PASS/FAIL per draft against the card and the ledger. |
@@ -51,6 +51,9 @@ or by Manuel, sends.
 | `docs/setup.md` | One-time setup per tenant: inbox, OAuth app, booking link, monday board, scheduled task. |
 | `docs/sources.md` | Ticket 07 result: every candidate source checked, kept or dropped and why, with URLs; rows per source and segment; filters and sort order. |
 | `docs/handoff-2026-11-21.md` | Where the work stands, batch 1 results, open decisions, exact next commands. |
+| `docs/enrich.md` | `tools/enrich.py` in one page: what it reads, how to run it, how the score is calibrated, known limits. |
+| `docs/lawful-basis.md` | One page for the 180DC legal team: why legitimate interest, what we collect and from where, the opt-out, retention (open), personal data vs info@. |
+| `docs/tooling-review-2026-11-23.md` | Every suggested outside tool and post (repos checked), verdicts against the kit's rules, the phased plan, token targets, open decisions. |
 | `docs/REPO-MAP.md` | This file. |
 | `docs/prompts/next-session-target-list.md` | The prompt used to start the ticket 07/08 session. |
 | `docs/tickets/README.md` | Ticket index in working order: phase A (get batches out), phase B (turn readers into calls). |
@@ -71,18 +74,21 @@ or by Manuel, sends.
 | Path | What it does |
 |---|---|
 | `tools/tenant.py` | Where a tenant's files live; every tool imports it. Picks the tenant from `OUTREACH_TENANT`. |
-| `tools/pipeline.py` | `add-org`, `add-contact`, `add-touch`, `set`, `show`: the only way to change `pipeline.yaml`. Checks registry and suppression on add. |
+| `tools/pipeline.py` | `add-org`, `add-contact`, `add-touch`, `set`, `show`: the only way to change `pipeline.yaml`. Checks registry and suppression on add; `add-contact` refuses a domain with no mail server (MX) and stores the lawful basis (`--basis`). |
 | `tools/registry.py` | `check <domain>`: is anyone in the branch already talking to this organisation? Local file now, monday.com later. |
 | `tools/firm_contacts.py` | Pulls the addresses and team pages an organisation publishes on its own site (used by the researcher). |
 | `tools/lint_email.py` | Checks a draft: word count, one question, one link, banned words, `[claim:]` IDs exist and are usable, `[src:]` present. |
-| `tools/gmail_draft.py` | Gmail: `draft --touch` (adds footer and opt-out), `read`, `sync` (classifies replies, opt-outs, bounces, auto-replies). |
+| `tools/gmail_draft.py` | Gmail: `draft --touch` (adds footer, opt-out and the List-Unsubscribe header), `read`, `sync` (classifies replies, opt-outs incl. "unsubscribe", bounces, auto-replies). |
 | `tools/google_auth.py` | OAuth for the tenant's sending inbox; token in `private/`. |
-| `tools/send.py` | `status`, `check`, `ready`, `approvals`, `approve` (Manuel), `run` (scheduler): every send rule, the ramp, gaps, window, auto-pause. |
+| `tools/send.py` | `status`, `check`, `ready` (holds a contact with no lawful basis), `approvals [--html]` (writes `state/approvals.html`), `approve` (Manuel), `run` (scheduler): every send rule, the ramp, gaps, window, auto-pause. |
 | `tools/followups.py` | `prepare`: writes, lints, drafts and queues every due follow-up without a model. |
 | `tools/outreach_due.py` | What today's run has to do, in order. Read-only. |
 | `tools/stats.py` | Numbers for the weekly review, by arm and tier. Read-only. |
 | `tools/writer_lock.py` | One writer for `pipeline.yaml` at a time. |
-| `tools/selftest.py` | Offline self-test of every sending rule against a throwaway tenant (55 checks). Run it after any change. |
+| `tools/enrich.py` | One organisation's own site in, a facts record + digest out (0 tokens): robots-aware, cached 16-request budget, funders, printed addresses, forms, staff, vacancies, pain words, then the score gate. See `docs/enrich.md`. |
+| `tools/calls.py` | `add`, `list`, `due`, `log` for the calls Manuel makes himself, in `state/calls.yaml`; never dials or fetches and never enters the send path. |
+| `tools/verdict_harness.py` | Test bench for a cheap model on the verdict job: digests + job-A prompt + `model(prompt)` from `VERDICT_MODEL`, shape checks, match rate against `cards/*.md`. |
+| `tools/selftest.py` | Offline self-test of every sending rule against a throwaway tenant (129 checks). Run it after any change. |
 | `tools/daily_run.ps1` | The scheduled weekday run: preflight login check, one Claude session to prepare, then `send.py run`. |
 
 ### tools/sources/ (ticket 07, list building)

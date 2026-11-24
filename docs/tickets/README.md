@@ -23,5 +23,8 @@ Updated 2026-11-21. Work top to bottom. Phase A gets emails out; phase B turns r
 | 05 | [Lecture-clash flag for booked calls](05-lecture-clash-flag.md) | Manuel wants to decide when a call lands on a lecture | S |
 | 06 | [Show-up: reminder and prep note](06-show-up.md) | A booked call that does not happen is a lost client | S |
 
+**Tooling and the plan beyond these tickets:** `docs/tooling-review-2026-11-23.md` (every suggested
+repo checked, phase 0 changes before the first send, token targets, Manuel's decisions).
+
 Rule for all of them: **the cold email keeps one link, the booking page.** More links hurt
 deliverability on a shared domain and split attention.

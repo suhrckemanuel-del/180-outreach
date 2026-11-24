@@ -1,10 +1,321 @@
-# Organisations, people and touches for this tenant. Addresses live in private/contacts.private.yaml.
-# Write only through the tools (send.py, gmail_draft.py sync --apply) or under the writer lock.
-#
-# org:   id, name, domain, city, country, segment, lang (en|de), tier (1|2), status
-#        (active | replied | opted_out | closed | paused), card (cards/<id>.md), outcome (call | proposal | signed | no)
-# touch: id, contact, kind (first | follow_up | chain), arm (A|B), status
-#        (drafted | needs_approval | ready | sent | replied | bounced | opted_out | no_reply | held),
-#        body (drafts/<touch>.txt, the tagged source), draft_id, gmail_thread_id, drafted, sent, approved, after
-
-orgs: []
+orgs:
+- id: maaszicht
+  name: Stichting Maaszicht
+  domain: maaszicht.nl
+  city: Rotterdam
+  country: NL
+  segment: nonprofit
+  lang: en
+  tier: 2
+  status: active
+  card: cards/maaszicht.md
+  added: '2026-11-24'
+  contacts:
+  - id: maaszicht-p1
+    name: Marco van Breukelen
+    title: Zakelijk directeur (via info@)
+  touches:
+  - id: maaszicht-p1-1
+    contact: maaszicht-p1
+    kind: first
+    arm: A
+    status: sent
+    body: drafts/maaszicht-p1-1.txt
+    workflows:
+    - the referral intake
+    - keeping the case files up to date
+    draft_id: r-8168422958198260414
+    gmail_thread_id: 1a20cf62ca97d214
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T10:51:54'
+    message_id: 1a20cf813ae317a7
+- id: stichtingopwijs
+  name: Stichting Opwijs
+  domain: stichtingopwijs.nl
+  city: Rotterdam
+  country: NL
+  segment: nonprofit
+  lang: en
+  tier: 2
+  status: active
+  card: cards/stichtingopwijs.md
+  added: '2026-11-24'
+  contacts:
+  - id: stichtingopwijs-p1
+    name: ''
+    title: general inbox (no named person published)
+  touches:
+  - id: stichtingopwijs-p1-1
+    contact: stichtingopwijs-p1
+    kind: first
+    arm: B
+    status: sent
+    body: drafts/stichtingopwijs-p1-1.txt
+    workflows:
+    - childcare sign-ups and the waiting list
+    - the fee letters to parents
+    draft_id: r2657206232066496558
+    gmail_thread_id: 1a20cf636d9ddfd8
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T10:57:17'
+    message_id: 1a20cfcff1a498f4
+- id: kinderparadijs
+  name: Stichting Kinderparadijs Meidoorn
+  domain: kinderparadijs.net
+  city: Rotterdam
+  country: NL
+  segment: nonprofit
+  lang: en
+  tier: 2
+  status: active
+  card: cards/kinderparadijs.md
+  added: '2026-11-24'
+  contacts:
+  - id: kinderparadijs-p1
+    name: ''
+    title: general inbox (no named person published)
+  touches:
+  - id: kinderparadijs-p1-1
+    contact: kinderparadijs-p1
+    kind: first
+    arm: A
+    status: sent
+    body: drafts/kinderparadijs-p1-1.txt
+    workflows:
+    - new member sign-ups
+    - thank-you letters to donors and funds
+    draft_id: r-5440337874783337008
+    gmail_thread_id: 1a20cf6406250e8f
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T11:02:37'
+    message_id: 1a20d01e344ceadb
+- id: oaserotterdam
+  name: OASE
+  domain: oaserotterdam.nl
+  city: Rotterdam
+  country: NL
+  segment: social_enterprise
+  lang: en
+  tier: 2
+  status: active
+  card: cards/oaserotterdam.md
+  added: '2026-11-24'
+  contacts:
+  - id: oaserotterdam-p1
+    name: Berend van Zanten
+    title: Zakelijk directeur (via info@)
+  touches:
+  - id: oaserotterdam-p1-1
+    contact: oaserotterdam-p1
+    kind: first
+    arm: B
+    status: sent
+    body: drafts/oaserotterdam-p1-1.txt
+    workflows:
+    - matching new volunteers to shifts
+    - replying to new volunteers
+    draft_id: r3907700753800513692
+    gmail_thread_id: 1a20cf648838a8ff
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T11:09:15'
+    message_id: 1a20d07f634f30ee
+- id: equalrecruitment
+  name: Equal Recruitment
+  domain: equalrecruitment.nl
+  city: Rotterdam
+  country: NL
+  segment: social_enterprise
+  lang: en
+  tier: 2
+  status: active
+  card: cards/equalrecruitment.md
+  added: '2026-11-24'
+  contacts:
+  - id: equalrecruitment-p1
+    name: Mirjam Koornneef
+    title: CEO (via info@)
+  touches:
+  - id: equalrecruitment-p1-1
+    contact: equalrecruitment-p1
+    kind: first
+    arm: A
+    status: sent
+    body: drafts/equalrecruitment-p1-1.txt
+    workflows:
+    - writing up the first meeting and company visit
+    - building each candidate's screening file
+    draft_id: r-6054197781053957919
+    gmail_thread_id: 1a20cf6535c88e3b
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T11:14:39'
+    message_id: 1a20d0ce559595e0
+- id: cupxchange
+  name: CupXchange
+  domain: cupxchange.nl
+  city: Rotterdam
+  country: NL
+  segment: social_enterprise
+  lang: en
+  tier: 2
+  status: active
+  card: cards/cupxchange.md
+  added: '2026-11-24'
+  contacts:
+  - id: cupxchange-p1
+    name: Thijs Cox and Chong Hu
+    title: co-founders (via info@)
+  touches:
+  - id: cupxchange-p1-1
+    contact: cupxchange-p1
+    kind: first
+    arm: B
+    status: sent
+    body: drafts/cupxchange-p1-1.txt
+    workflows:
+    - the national logistics planning
+    - the reports to customers
+    draft_id: r-3193479227292822471
+    gmail_thread_id: 1a20d0e197fd5e33
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T11:29:48'
+    message_id: 1a20d1ac4286b075
+- id: lunchbunch
+  name: Lunch Bunch
+  domain: lunchbunch.nl
+  city: Rotterdam
+  country: NL
+  segment: social_enterprise
+  lang: en
+  tier: 2
+  status: active
+  card: cards/lunchbunch.md
+  added: '2026-11-24'
+  contacts:
+  - id: lunchbunch-p1
+    name: Robin Achterkamp
+    title: Founder (via info@)
+  touches:
+  - id: lunchbunch-p1-1
+    contact: lunchbunch-p1
+    kind: first
+    arm: A
+    status: sent
+    body: drafts/lunchbunch-p1-1.txt
+    workflows:
+    - the standing lunch orders for each company
+    - the social impact figures
+    draft_id: r9130666651443485448
+    gmail_thread_id: 1a20d0e2e6288eac
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T11:33:27'
+    message_id: 1a20d1e1d7e4c04f
+- id: teachbuddy
+  name: TeachBuddy
+  domain: teachbuddy.com
+  city: Rotterdam
+  country: NL
+  segment: social_enterprise
+  lang: en
+  tier: 2
+  status: active
+  card: cards/teachbuddy.md
+  added: '2026-11-24'
+  contacts:
+  - id: teachbuddy-p1
+    name: Rik Roosenstein
+    title: Co-founder and CEO (via info@)
+  touches:
+  - id: teachbuddy-p1-1
+    contact: teachbuddy-p1
+    kind: first
+    arm: B
+    status: sent
+    body: drafts/teachbuddy-p1-1.txt
+    workflows:
+    - the monthly reports to schools
+    - matching help requests to tutors
+    draft_id: r-2815134256384668375
+    gmail_thread_id: 1a20d0e43f0d4e6e
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T11:37:45'
+    message_id: 1a20d220ad918c62
+- id: socialdebt
+  name: Stichting Socialdebt
+  domain: socialdebt.nl
+  city: Rotterdam
+  country: NL
+  segment: social_enterprise
+  lang: en
+  tier: 2
+  status: active
+  card: cards/socialdebt.md
+  added: '2026-11-24'
+  contacts:
+  - id: socialdebt-p1
+    name: ''
+    title: general inbox (no named person published)
+  touches:
+  - id: socialdebt-p1-1
+    contact: socialdebt-p1
+    kind: first
+    arm: A
+    status: sent
+    body: drafts/socialdebt-p1-1.txt
+    workflows:
+    - the first file for each new sign-up
+    - the reports to partners and funds
+    draft_id: r626152183726239160
+    gmail_thread_id: 1a20d0e3842081b7
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T11:42:51'
+    message_id: 1a20d26b9b28b9c5
+- id: heiligeboontjes
+  name: Heilige Boontjes
+  domain: heiligeboontjes.com
+  city: Rotterdam
+  country: NL
+  segment: social_enterprise
+  lang: en
+  tier: 2
+  status: active
+  card: cards/heiligeboontjes.md
+  added: '2026-11-24'
+  contacts:
+  - id: heiligeboontjes-p1
+    name: ''
+    title: quote-request inbox (no named person published)
+  touches:
+  - id: heiligeboontjes-p1-1
+    contact: heiligeboontjes-p1
+    kind: first
+    arm: B
+    status: sent
+    body: drafts/heiligeboontjes-p1-1.txt
+    workflows:
+    - the webshop and subscription dispatch
+    - quotes and invoices for business and event requests
+    draft_id: r-6317730533067992233
+    gmail_thread_id: 1a20d0e22b4468a4
+    drafted: '2026-11-24'
+    approved: true
+    approved_on: '2026-11-24'
+    sent: '2026-11-24T11:50:46'
+    message_id: 1a20d2df65b2d418
