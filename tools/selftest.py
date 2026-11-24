@@ -21,6 +21,7 @@ REAL = HERE.parent / "tenants" / "180dc-delft-rotterdam"
 TMP = Path(tempfile.mkdtemp(prefix="outreach-selftest-"))
 T = TMP / "tenants" / "selftest"
 shutil.copytree(REAL, T, ignore=shutil.ignore_patterns("private", "state", "drafts", "cards"))
+(T / "pipeline.yaml").write_text("orgs: []\n", encoding="utf-8")  # start empty: never test on the real pipeline
 os.environ["OUTREACH_ROOT"] = str(TMP)
 os.environ["OUTREACH_TENANT"] = "selftest"
 sys.path.insert(0, str(HERE))
@@ -44,6 +45,8 @@ import registry  # noqa: E402
 import send  # noqa: E402
 import tenant  # noqa: E402
 
+REAL_DRAFT = gmail_draft.draft  # the follow-up test below swaps it for a stub
+pl._resolve_mx = lambda domain: [f"mx.{domain}"]  # no real DNS in the self-test; MX checks stub it below
 PASSED, FAILED = [], []
 
 
@@ -113,6 +116,40 @@ try:
     check("pipeline: address off the org's domain is refused", False)
 except SystemExit:
     check("pipeline: address off the org's domain is refused", True)
+
+# lawful basis and MX check on add-contact
+stored = tenant.load(tenant.CONTACTS)["org-a-p1"]
+check("basis: the default basis is stored next to the address, naming its source page",
+      stored["basis"].startswith("legitimate interest") and "https://orga.nl/team" in stored["basis"])
+pl.add_contact(ns(org="org-a", id="org-a-p2", name="P Two", title="Bestuurder", email="p2@orga.nl",
+                  source="https://orga.nl/team", allow_other_domain=False, basis="consent: asked us to write"))
+check("basis: --basis is stored as given", tenant.load(tenant.CONTACTS)["org-a-p2"]["basis"] == "consent: asked us to write")
+
+
+def refused_with(stub, email):
+    pl._resolve_mx = stub
+    try:
+        pl.add_contact(ns(org="org-a", id="org-a-mx", name="M", title="t", email=email,
+                          source="https://orga.nl/team", allow_other_domain=True))
+        return None
+    except SystemExit as exc:
+        return str(exc)
+    finally:
+        pl._resolve_mx = lambda domain: [f"mx.{domain}"]
+
+
+def _dns_down(domain):
+    raise pl.DnsUnreachable("LifetimeTimeout: no answer")
+
+
+msg_none = refused_with(lambda d: [], "x@nomail.example")
+check("mx: an address whose domain has no mail server is refused", msg_none is not None and "no mail server" in msg_none)
+msg_down = refused_with(_dns_down, "x@orga.nl")
+check("mx: DNS unreachable refuses with a clear message, never accepts",
+      msg_down is not None and "could not reach DNS" in msg_down)
+check("mx: a refused address is not stored", "org-a-mx" not in tenant.load(tenant.CONTACTS)
+      and all(c["id"] != "org-a-mx" for c in tenant.load(tenant.PIPELINE)["orgs"][0]["contacts"]))
+check("mx: a domain with a mail server is accepted", refused_with(lambda d: ["mx1." + d], "p3@orga.nl") is None)
 
 # give every first touch a body and a fake Gmail draft
 (T / "drafts").mkdir(exist_ok=True)
@@ -281,6 +318,256 @@ try:
     check("sender: a personal Gmail login is refused", False)
 except SystemExit as exc:
     check("sender: a personal Gmail login is refused", "WRONG_ACCOUNT" in str(exc))
+
+# ---------- List-Unsubscribe header and "unsubscribe" as an opt-out ----------
+import base64 as _b64  # noqa: E402
+import email as _email  # noqa: E402
+
+
+class _Exec:
+    def __init__(self, value):
+        self.value = value
+
+    def execute(self):
+        return self.value
+
+
+class FakeDraftGmail:
+    """Enough of the Gmail API for gmail_draft.draft(): profile, thread metadata, draft create/delete."""
+    def __init__(self):
+        self.created = []
+
+    def users(self):
+        return self
+
+    def getProfile(self, userId):
+        return _Exec({"emailAddress": "outreach@180dc.example"})
+
+    def drafts(self):
+        return self
+
+    def threads(self):
+        return self
+
+    def create(self, userId, body):
+        self.created.append(body)
+        return _Exec({"id": f"dr-{len(self.created)}", "message": {"threadId": body["message"].get("threadId", f"th-{len(self.created)}")}})
+
+    def delete(self, userId, id):
+        return _Exec({})
+
+    def get(self, userId, id, format=None, metadataHeaders=None):
+        return _Exec({"messages": [{"payload": {"headers": [{"name": "Subject", "value": "Two ideas"},
+                                                            {"name": "Message-ID", "value": "<m1@180dc.example>"}]}}]})
+
+
+fake_gm = FakeDraftGmail()
+gmail_draft.service = lambda **kw: fake_gm
+pl.add_org(ns(id="org-e", name="ORG-E", domain="orge.nl", city="Delft", country="NL", segment="nonprofit", tier=2, card=None))
+for cid in ("org-e-p1", "org-e-p2"):
+    pl.add_contact(ns(org="org-e", id=cid, name="R", title="Directeur", email=f"{cid}@orge.nl",
+                      source="https://orge.nl/team", allow_other_domain=False))
+pl.add_touch(ns(org="org-e", contact="org-e-p1", kind="first", workflows=["intake", "reports"]))
+pl.add_touch(ns(org="org-e", contact="org-e-p2", kind="chain", workflows=["intake", "reports"]))
+p = tenant.load(tenant.PIPELINE)
+for tid in ("org-e-p1-1", "org-e-p2-1"):
+    (T / send.find(p, tid)[1]["body"]).write_text(GOOD_B, encoding="utf-8")
+REAL_DRAFT(ns(touch="org-e-p1-1"))
+p = tenant.load(tenant.PIPELINE)
+send.find(p, "org-e-p1-1")[1]["status"] = "sent"
+tenant.save(tenant.PIPELINE, p)
+pl.add_touch(ns(org="org-e", contact="org-e-p1", kind="follow_up", workflows=None))
+(T / "drafts" / "org-e-p1-fu.txt").write_text(FOLLOW, encoding="utf-8")
+REAL_DRAFT(ns(touch="org-e-p1-fu"))
+REAL_DRAFT(ns(touch="org-e-p2-1"))
+want = "<mailto:outreach@180dc.example?subject=unsubscribe>"
+heads = [_email.message_from_bytes(_b64.urlsafe_b64decode(b["message"]["raw"]))["List-Unsubscribe"] for b in fake_gm.created]
+check("unsubscribe: first email, follow-up and chain all carry List-Unsubscribe to the sender",
+      len(heads) == 3 and all(h == want for h in heads))
+check("unsubscribe: the follow-up is still threaded", fake_gm.created[1]["message"].get("threadId") == "th-1")
+
+check("classify: subject 'unsubscribe' with an empty body is an opt-out",
+      gmail_draft.classify(msg("a@orga.nl", subject="unsubscribe"), me) == "opt_out")
+check("classify: a reply whose body is just 'Unsubscribe' is an opt-out",
+      gmail_draft.classify(msg("a@orga.nl", subject="Re: Two ideas", snippet="Unsubscribe."), me) == "opt_out")
+check("classify: an unsubscribe mail flagged auto-generated is still an opt-out",
+      gmail_draft.classify(msg("a@orga.nl", subject="unsubscribe", Auto_Submitted="auto-generated"), me) == "opt_out")
+p = tenant.load(tenant.PIPELINE)
+contacts = tenant.load(tenant.CONTACTS)
+rows = gmail_draft.match_unsubscribes([msg("P One <p1@orga.nl>", subject="unsubscribe")], p, contacts, me, {})
+check("sync: an unthreaded unsubscribe mail opts out that contact's sent touches",
+      sorted(rows) == ["org-a-p1-1", "org-a-p1-fu"] and all(r[2] == "opt_out" for r in rows.values()))
+rows = gmail_draft.match_unsubscribes([msg("office@orgb.nl", subject="unsubscribe")], p, contacts, me, {})
+check("sync: an unsubscribe from another address at the domain opts out the organisation",
+      sorted(rows) == ["org-b-p1-1", "org-b-p1-fu"])
+
+# a touch whose contact has no lawful basis is held
+p = tenant.load(tenant.PIPELINE)
+org_e, t_e = send.find(p, "org-e-p2-1")
+check("basis: a contact with a basis is not held for it",
+      not any("lawful basis" in r for r in send.content_and_contact_reasons(org_e, t_e, dt.date.today())))
+contacts = tenant.load(tenant.CONTACTS)
+contacts["org-e-p2"].pop("basis")
+tenant.save(tenant.CONTACTS, contacts)
+check("basis: send.py holds a touch whose contact has no basis",
+      send.cmd_ready(ns(touch="org-e-p2-1")) == 2
+      and any("lawful basis" in r for r in send.content_and_contact_reasons(org_e, t_e, dt.date.today())))
+
+# ---------- approval page ----------
+(T / "cards").mkdir(exist_ok=True)
+(T / "cards" / "org-f.md").write_text(
+    "ORG: x\nWORKFLOW: volunteers <b>sign up</b> by form (https://orgf.nl/vrijwilligers)\n"
+    "FUNDING: javascript:alert(1) and gemeente subsidy https://orgf.nl/over?a=1&b=2\n", encoding="utf-8")
+pl.add_org(ns(id="org-f", name="<script>alert(1)</script> & Co", domain="orgf.nl", city="Delft", country="NL",
+              segment="nonprofit", tier=2, card="cards/org-f.md"))
+pl.add_contact(ns(org="org-f", id="org-f-p1", name="S", title="Directeur", email="info@orgf.nl",
+                  source="https://orgf.nl/contact", allow_other_domain=False))
+pl.add_touch(ns(org="org-f", contact="org-f-p1", kind="first", workflows=["intake", "reports"]))
+p = tenant.load(tenant.PIPELINE)
+t_f = send.find(p, "org-f-p1-1")[1]
+(T / t_f["body"]).write_text(GOOD_B, encoding="utf-8")
+t_f.update(status="drafted", draft_id="d-org-f", drafted=dt.date.today().isoformat())
+tenant.save(tenant.PIPELINE, p)
+send.cmd_ready(ns(touch="org-f-p1-1"))
+send.cmd_approvals(ns(html=True))
+page = (T / "state" / "approvals.html").read_text(encoding="utf-8") if (T / "state" / "approvals.html").exists() else ""
+check("approvals: --html writes state/approvals.html with the touch id to approve",
+      "org-f-p1-1" in page and "send.py approve --touch org-f-p1-1" in page)
+check("approvals: every text is escaped", "<script>alert" not in page and "&lt;script&gt;alert(1)&lt;/script&gt; &amp; Co" in page
+      and "<b>sign up" not in page)
+check("approvals: card facts keep their source links, and only http(s) becomes a link",
+      'href="https://orgf.nl/vrijwilligers"' in page and 'href="https://orgf.nl/over?a=1&amp;b=2"' in page
+      and 'href="javascript' not in page)
+check("approvals: the clean text is shown, tags stripped, with the footer",
+      "Two ideas for your volunteer intake" in page and "[claim:" not in page and "[src:" not in page
+      and "We found info@orgf.nl on orgf.nl/contact" in page)
+check("approvals: tier and arm are shown", "tier 2 · arm" in page)
+
+# ---------- enrich.py: code-only site facts and the score gate (HTTP stubbed, no network) ----------
+import enrich  # noqa: E402
+
+HOME = ("<html><body><nav><a href='/aanmelden'>Aanmelden</a> <a href='/contact'>Contact</a> "
+        "<a href='/vacatures'>Vacatures</a></nav><h1>Stichting Voorbeeld</h1>"
+        "<p>Wij werken met 25 medewerkers. De werkdruk is hoog en alles gaat handmatig in Excel. Mogelijk gemaakt door Oranje Fonds.</p>"
+        "<p>Jan de Vries - jan [at] voorbeeld.nl</p><p>Aanmelden: <a href='mailto:aanmelden@voorbeeld.nl'>mail</a></p>"
+        "<p>Extern: spam@elders.com</p></body></html>")
+FORM = ("<html><body><form action='/x'><label>Naam</label><input name=n><label>Leeftijd kind</label><input name=a>"
+        "<label>School</label><input name=s><label>Hulpvraag</label><textarea name=h></textarea></form></body></html>")
+PAGES = {
+    "https://voorbeeld.nl/": HOME, "https://voorbeeld.nl/aanmelden": FORM,
+    "https://voorbeeld.nl/contact": "<html><body><p>Bel ons.</p></body></html>",
+    "https://voorbeeld.nl/vacatures": "<html><body><h2>Administratief medewerker</h2></body></html>",
+}
+CALLS = []
+
+
+def stub(url):
+    CALLS.append(url)
+    if url.endswith("robots.txt"):
+        return {"body": "User-agent: *\nDisallow: /vacatures\n", "final": url, "ctype": "text/plain"}
+    if url in PAGES:
+        return {"body": PAGES[url], "final": url, "ctype": "text/html"}
+    return None
+
+
+facts = enrich.enrich("voorbeeld.nl", fetcher=stub, mx_check=False)
+addrs = {e["address"]: e for e in facts["emails"]}
+check("enrich: a printed mailto address on the domain is found, with its page",
+      "aanmelden@voorbeeld.nl" in addrs and addrs["aanmelden@voorbeeld.nl"]["url"].startswith("https://voorbeeld.nl/"))
+check("enrich: '[at]' is decoded and the name printed beside the address is kept",
+      "jan@voorbeeld.nl" in addrs and addrs["jan@voorbeeld.nl"]["name"] == "Jan de Vries")
+check("enrich: an address on another domain is skipped", not any("elders" in a for a in addrs))
+check("enrich: robots.txt is obeyed (a disallowed page is never fetched)",
+      "https://voorbeeld.nl/vacatures" not in CALLS and facts["vacancies"] == [])
+check("enrich: every extracted value carries a URL",
+      all(x.get("url") for k in ("emails", "forms", "funders", "staff", "pain") for x in facts[k]) and facts["funders"] and facts["staff"])
+check("enrich: the workflow form's field labels are read",
+      any(f["kind"] == "form" and "Hulpvraag" in f["fields"] for f in facts["forms"]))
+check("enrich: it suggests the printed workflow address over a general one",
+      facts["role_match"]["address"] == "aanmelden@voorbeeld.nl")
+check("enrich: no guessing, every address returned is printed in the fixture pages",
+      all(a in " ".join(PAGES.values()).replace(" [at] ", "@") for a in addrs))
+check("enrich: it stays inside the request budget", len(CALLS) <= enrich.FETCH_BUDGET)
+sc = enrich.score(facts, {"name": "Stichting Voorbeeld", "segment": "social_enterprise"}, d1=False)
+check("score: a social enterprise with a workflow form, funder and named person goes to the model",
+      sc["go"] and sc["score"] >= 9)
+no_addr = dict(facts, emails=[])
+check("score: gate on no on-domain address (skip, whatever the points)",
+      enrich.score(no_addr, {"segment": "social_enterprise"}, d1=False)["skip"] == "no on-domain address")
+check("score: gate on a site that is down", enrich.score(dict(facts, alive=False), {}, d1=False)["skip"] == "site down")
+check("score: gate on a suppressed domain",
+      enrich.score(facts, {}, d1=False, suppressed={"voorbeeld.nl"})["skip"] == "suppressed")
+check("score: cultural names only lose points when D1 is yes",
+      enrich.score(facts, {"name": "Theater X"}, d1=True)["score"] == enrich.score(facts, {"name": "Theater X"}, d1=False)["score"] - 3)
+check("enrich: a person without a printed address stays without one (no guessing path)",
+      enrich.enrich("zonder.nl", fetcher=lambda u: {"body": "<html><body><p>Jan de Vries, directeur</p></body></html>", "final": u, "ctype": "text/html"}
+                    if not u.endswith("robots.txt") else None, mx_check=False)["emails"] == [])
+
+# reviewer findings: redirects, robots failures, uncached failures, odd mailto, sister TLDs
+CALLS2 = []
+
+
+def stub_redirect(url):
+    CALLS2.append(url)
+    if url.endswith("robots.txt"):
+        return {"body": "", "final": url, "ctype": "text/plain", "status": 404}
+    if url == "https://redir.nl/":
+        return {"body": "<html><body><p>x@redir.nl</p></body></html>", "final": "https://elders.com/", "ctype": "text/html", "status": 200}
+    return None
+
+
+f2 = enrich.enrich("redir.nl", fetcher=stub_redirect, mx_check=False)
+check("enrich: a redirect to another host is dropped, its content never used", not f2["alive"] and f2["emails"] == [])
+CALLS3 = []
+
+
+def stub_robots_down(url):
+    CALLS3.append(url)
+    return {"body": "", "final": url, "ctype": "", "status": 503} if url.endswith("robots.txt") else {"body": "<html>x</html>", "final": url, "ctype": "text/html", "status": 200}
+
+
+f3 = enrich.enrich("robotsdown.nl", fetcher=stub_robots_down, mx_check=False)
+check("enrich: an unreachable robots.txt (5xx) means nothing is fetched", CALLS3 == ["https://robotsdown.nl/robots.txt"] and not f3["alive"])
+n_before = len(CALLS2)
+enrich.enrich("redir.nl", fetcher=stub_redirect, mx_check=False)
+check("enrich: a failed fetch is not cached (the next run asks again)", len(CALLS2) > n_before)
+mail_html = "<a href='mailto:a@multi.nl,b@multi.nl'>x</a><a href='mailto:Jan%20%3Cjan@multi.nl%3E'>y</a>"
+got = sorted(e["address"] for e in enrich.extract_emails(mail_html, "https://multi.nl/", "multi.nl"))
+check("enrich: a multi-recipient or decorated mailto yields single clean addresses only", got == ["a@multi.nl", "jan@multi.nl"])
+check("enrich: an address on a sister TLD of a suppressed domain is suppressed",
+      enrich.score(dict(facts, domain="voorbeeld.com"), {}, d1=False, suppressed={"voorbeeld.nl"})["skip"] == "suppressed")
+check("enrich: x.co.uk style names keep their stem", enrich.stem("shop.ziggo.co.uk") == "ziggo")
+
+# ---------- T1: a partner's staff count is not the organisation's ----------
+SAMEN = {
+    "https://samen.nl/": "<html><body><h1>Stichting Samen</h1><p>Wij werken met 30 medewerkers.</p>"
+                        "<p><a href='/over-ons/team'>Team</a> <a href='/over-ons/partners'>Partners</a></p></body></html>",
+    "https://samen.nl/over-ons/team": "<html><body><h1>Team</h1><p>Wij zijn met 24 medewerkers.</p></body></html>",
+    "https://samen.nl/over-ons/partners": "<html><body><h1>Onze partners</h1>"
+                                          "<p>Bakkerij Jansen werkt met 500 medewerkers.</p></body></html>",
+}
+
+
+def stub_pages(pages):
+    def f(url):
+        if url.endswith("robots.txt"):
+            return {"body": "", "final": url, "ctype": "text/plain", "status": 404}
+        return {"body": pages[url], "final": url, "ctype": "text/html"} if url in pages else None
+    return f
+
+
+fs = enrich.enrich("samen.nl", fetcher=stub_pages(SAMEN), mx_check=False)
+numbers = [s["n"] for s in fs["staff"]]
+check("enrich T1: a partner's staff figure on a partners page is not counted as the organisation's",
+      500 not in numbers and not any(s["url"].endswith("/partners") for s in fs["staff"]))
+check("enrich T1: the organisation's own figures on its homepage and team page are kept",
+      30 in numbers and 24 in numbers)
+PARTNERS_ONLY = {
+    "https://alleenpartners.nl/": "<html><body><h1>Onze partners</h1>"
+                                 "<p>Bakkerij Jansen werkt met 500 medewerkers.</p></body></html>",
+}
+check("enrich T1: a staff figure on a partners page never counts, even on the homepage",
+      enrich.enrich("alleenpartners.nl", fetcher=stub_pages(PARTNERS_ONLY), mx_check=False)["staff"] == [])
 
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
