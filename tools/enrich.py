@@ -213,6 +213,14 @@ CATEGORIES = [  # (name, url/anchor words, max pages)
     ("workflow", r"aanmeld|inschrijv|intake|verwijz|vrijwilliger|bestel|offerte|aanvragen|aanvraag|registr|word-lid|meld", 2),
 ]
 SKIP_URL = re.compile(r"\.(pdf|jpe?g|png|gif|svg|webp|zip|docx?|xlsx?|mp[34])(\?|$)|/(wp-json|feed|tag|category|author|cart|winkelwagen|privacy|cookie)", re.I)
+# Two pages always get one of the 8 slots when the homepage links them: the page that names funders
+# and the page that carries the team's addresses. Otherwise a site with many matching pages can push
+# them out, which is how funders and team addresses went missing.
+GUARANTEED = [  # (category, url/anchor words, extra words that make a page the better pick)
+    ("funding", r"partner|fondsen|financiering|sponsor|steun|subsidie|donateur|samenwerking", None),
+    ("team", r"team|bestuur|medewerkers|mensen|colofon|board|contact|kontakt|bereik|wie[-_ ]?zijn",
+     r"contact|bereik|kontakt"),
+]
 
 
 def link_candidates(html: str, base: str, domain: str) -> list[tuple[str, str]]:
@@ -259,7 +267,28 @@ def choose_pages(home_final: str, home_html: str, site: Site, sitemap: list[str]
         cands[u] = label or cands.get(u, "")
     chosen: list[str] = []
     used = {home_final.rstrip("/"), site.root.rstrip("/")}
+    forced: set[str] = set()
+    for name, words, bonus in GUARANTEED:
+        rx = re.compile(words, re.I)
+        brx = re.compile(bonus, re.I) if bonus else None
+        scored = []
+        for u, label in cands.items():
+            if u.rstrip("/") in used or u in chosen:
+                continue
+            path = urllib.parse.urlsplit(u).path
+            hit = 3 * len(rx.findall(path)) + 2 * len(rx.findall(label))
+            if hit and brx and brx.search(path + " " + label):
+                hit += 2  # the page that also mentions contact is the one with the addresses
+            if hit:
+                scored.append((hit, -len(path), u))
+        if scored:
+            u = sorted(scored, reverse=True)[0][2]
+            chosen.append(u)
+            used.add(u.rstrip("/"))
+            forced.add(name)
     for name, words, cap in CATEGORIES:
+        if name in forced:  # already reserved above at its best page
+            continue
         rx = re.compile(words, re.I)
         scored = []
         for u, label in cands.items():

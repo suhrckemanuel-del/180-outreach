@@ -569,6 +569,27 @@ PARTNERS_ONLY = {
 check("enrich T1: a staff figure on a partners page never counts, even on the homepage",
       enrich.enrich("alleenpartners.nl", fetcher=stub_pages(PARTNERS_ONLY), mx_check=False)["staff"] == [])
 
+# ---------- T2: the funders page and the team page always make the 8 ----------
+NAV = {
+    "https://nav.nl/": "<html><body><h1>Stichting Navigatie</h1><p><a href='/contact'>Contact</a> "
+                       "<a href='/team'>Team</a> <a href='/team/contact'>Team contact</a> "
+                       "<a href='/over-ons/partners'>Partners</a> <a href='/vacatures'>Vacatures</a> "
+                       "<a href='/anbi'>ANBI</a> <a href='/aanmelden'>Aanmelden</a> "
+                       "<a href='/inschrijven'>Inschrijven</a> <a href='/intake'>Intake</a></p></body></html>",
+    "https://nav.nl/team/contact": "<html><body><h1>Team</h1><p>Mail <a href='mailto:team@nav.nl'>team@nav.nl</a></p></body></html>",
+    "https://nav.nl/over-ons/partners": "<html><body><h1>Partners</h1><p>Gesteund door Oranje Fonds.</p></body></html>",
+}
+for u in ("contact", "team", "vacatures", "anbi", "aanmelden", "inschrijven", "intake"):
+    NAV[f"https://nav.nl/{u}"] = f"<html><body><p>{u}</p></body></html>"
+fn = enrich.enrich("nav.nl", fetcher=stub_pages(NAV), mx_check=False)
+check("enrich T2: the partners page is read even when eight other pages match",
+      any(x.endswith("/partners") for x in fn["pages"]) and any(f["name"] == "Oranje Fonds" for f in fn["funders"]))
+check("enrich T2: the team contact page (with the address) is read, not just the team page",
+      any(x.endswith("/team/contact") for x in fn["pages"])
+      and any(e["address"] == "team@nav.nl" for e in fn["emails"]))
+check("enrich T2: guaranteed pages still fit the request budget", len(enrich.choose_pages(
+    "https://nav.nl/", NAV["https://nav.nl/"], enrich.Site("nav.nl", fetcher=stub_pages(NAV)), [])) <= enrich.MAX_PAGES)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 sys.exit(1 if FAILED else 0)
